@@ -1,0 +1,26 @@
+
+
+create blast database:
+cat ../00000.Ecoli.tiling.10x.faa.consensus | formatdb -i stdin -p T -n test
+
+
+against proteins:
+evaluate consensus
+blastall -p blastp -i 00000.Ecoli.tiling.10x.faa.consensus -d ecoli_db/ecoli_db -m9 -o 00000.Ecoli.tiling.10x.faa.consensus.blastp -F F
+../projects/perl_scripts/evaluate_protcluster/evaluate_protcluster.pl ./00000.Ecoli.tiling.10x.faa.consensus ./EC.faa ./00000.Ecoli.tiling.10x.faa.consensus.blastp 50
+
+evaluate reference (how good is reference covered by consensus)
+cat ../00000.Ecoli.tiling.10x.faa.consensus | formatdb -i stdin -p T -n condb
+blastall -p blastp -i EC.faa -d condb/condb -m9 -o ./EC.faa.blastp -F F
+../projects/perl_scripts/evaluate_protcluster/evaluate_protcluster.pl ./EC.faa ./00000.Ecoli.tiling.10x.faa.consensus ./EC.faa.blastp 0
+
+
+against genome:
+ cat ../EColi_K12_MG1655_genome.fas | formatdb -p F -i stdin -n MG1655
+blastall -p tblastn -i test.fas.consensus -d MG1655_genome/MG1655 -m9 -o test.fas.tblastn -M BLOSUM45 -F F
+
+
+
+
+blastall -p blastp -i 00000.Ecoli.tiling.10x.faa -v 3 -b 3 -d ecoli_db/ecoli_db -m8 -o fragments.blastp -M BLOSUM45 -F F
+
