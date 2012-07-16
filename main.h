@@ -31,6 +31,7 @@
 #include "kmer_iterator.hpp"
 #include "fasta_parser.hpp"
 
+//#include <iomanip>
 #include <time.h>
 
 #include <boost/program_options/detail/config_file.hpp>
@@ -63,7 +64,7 @@ const int low_abundance_threshold=5; // for kmers in the whole set of reads
 
 // overlap detection:
 const int kmerlength = 5;
-const int cluster_kmer_overlap_threshold = 5;// 7
+int cluster_kmer_overlap_threshold = 5;// 7
 
 
 // overlap verification:
@@ -102,10 +103,12 @@ class Clustgun {
 public:
 	bool list_all_members;
 	bool sort_input_seq;
+	bool avgcov;
 	
 	Clustgun() {
 		list_all_members = false;
 		sort_input_seq = false;
+		avgcov = false;
 	}
 	
 	void cluster(string inputfile);
@@ -113,6 +116,15 @@ public:
 	
 };
 
+
+
+template <typename T>
+string NumberToString ( T Number )
+{
+	stringstream ss;
+	ss << Number;
+	return ss.str();
+}
 
 
 
