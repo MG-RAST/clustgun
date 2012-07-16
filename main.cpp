@@ -9,6 +9,9 @@
 
 #include "main.h"
 
+
+
+
 int str2int(string& text){
 	
 	int number = std::atoi( text.c_str() );
@@ -1836,6 +1839,35 @@ void Clustgun::cluster(string inputfile) {
 			
 			output_stream << "> cluster" << current_cluster << " length=" << consensus->length() << " size=" << (*cluster_member_lists)[current_cluster]->getLength();
 			
+			if (avgcov) {
+				output_stream << " avgcov=";
+				
+				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
+				mymemberlist->resetIterator();
+				//bool start_loop = true;
+				int tot_len = 0;
+				while (mymemberlist->nextElement()) {
+					int seq_id = mymemberlist->getFirst();
+					//short offset = mymemberlist->getSecond();
+					//cout << seq_id << endl;
+					//if (start_loop) {
+					//	start_loop = false;
+					//} else {
+					//	output_stream << " " ; 
+					//}
+					
+					tot_len += (*inputSequences)[seq_id].second->length();
+					
+				}
+				
+				
+				double avgcov = (double)tot_len / (double) mymemberlist->getLength();
+				int avgcon_print = (int)(avgcov * 10); // restrict to one digit after decimal point
+				avgcov = (double) avgcon_print / (double) 10;
+				output_stream << avgcov ;
+			}
+			
+			
 			if (list_all_members) {
 				output_stream << " ";
 				
@@ -1958,14 +1990,22 @@ void usage(boost::program_options::options_description& options) {
 
 int main(int argc, const char * argv[])	{
 	
-	
+	// ----------------------------------
+	// define program options
 	namespace po = boost::program_options;
+	
+	
+	string	kmernum_help = string("minimum number of k-mers required (default ");
+			kmernum_help.append(NumberToString(cluster_kmer_overlap_threshold));
+			kmernum_help.append(")");
 	
 	po::options_description options_visible("Options");
 	options_visible.add_options()
-		("sort", 	"sort input sequences by length (slow!)")
-		("list", 	"list all members and their offsets of a cluster")
-		("help", 	"display this information");
+		("sort",							"sort input sequences by length (slow!)")
+		("avgcov",							"show average coverage")
+		("list",							"list all members and their offsets of a cluster")
+		("kmernum",	po::value< int >(),		kmernum_help.c_str()) //"minimum number of k-mers required"
+		("help",							"display this information");
 	
 	po::options_description options_hidden("Hidden");
 	options_hidden.add_options()
@@ -1989,6 +2029,10 @@ int main(int argc, const char * argv[])	{
 		exit(1);
     }
 
+	
+	// ----------------------------------
+	// evaluate program options
+	
 	
 	if (vm.count("help")) {
 		usage(options_visible);
@@ -2044,6 +2088,23 @@ int main(int argc, const char * argv[])	{
 	if (vm.count("sort")) {
 		my_pc.sort_input_seq = true;
 	}
+	
+	if (vm.count("avgcov")) {
+		my_pc.avgcov = true;
+	}
+	
+	if (vm.count("kmernum")) {
+		
+		cluster_kmer_overlap_threshold = vm["kmernum"].as< int >();
+		
+		if (cluster_kmer_overlap_threshold < 1) {
+			cerr << "error: parameter does make no sense" << endl;
+			exit(1);
+		}
+	}
+	
+	// ----------------------------------
+	// run
 	
 	my_pc.cluster(input_file);
 	
