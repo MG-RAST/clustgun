@@ -121,27 +121,47 @@ public:
 		size_t requested_array = (x >> two_power);
 //cout << "reserve" << endl;
 		while (hash->size() < requested_array) {
-			T * small_vec = new T [arrayChunkSize];
+			T * small_vec;
+			try {
+				small_vec = new T [arrayChunkSize];
+			} catch (bad_alloc& ba) {
+				cerr << "error: (HAT reserve) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
 			if (initialize_elements) {
 				for (size_t i =0; i < arrayChunkSize; ++i)  {
 					small_vec[i]=this->initialization_value;
 				}
 			}
 			//cout << "reserve push A " << small_vec << endl;
-			hash->push_back(small_vec);
-			
+			try {
+				hash->push_back(small_vec);
+			} catch (bad_alloc& ba) {
+				cerr << "error: (HAT reserve, push_back) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}	
 		}
 		
 		if (requested_array*two_power < x) {
-			T * small_vec = new T [arrayChunkSize];
+			T * small_vec;
+			try {
+				small_vec = new T [arrayChunkSize];
+			} catch (bad_alloc& ba) {
+				cerr << "error: (HAT reserve) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}	
 			if (initialize_elements) {
 				for (size_t i =0; i < arrayChunkSize; ++i)  {
 					small_vec[i]=this->initialization_value;
 				}
 			}
 			//cout << "reserve push B" << small_vec  << endl;
-			hash->push_back(small_vec);
-			
+			try {
+				hash->push_back(small_vec);
+			} catch (bad_alloc& ba) {
+				cerr << "error: (HAT reserve, push_back) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}	
 		}
 		//cout << "reserve len: " << hash->size() << endl;
 		
@@ -195,15 +215,24 @@ public:
 		T * small_vec;
 		
 		if (currentArray == 0 && nextFreePos == 0) {
-			small_vec = new T [arrayChunkSize];
-			
+			try {
+				small_vec = new T [arrayChunkSize];
+			} catch (bad_alloc& ba) {
+				cerr << "error: (HAT) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
 			if (this->initialize_elements) {
 				for (size_t i =0; i < arrayChunkSize; ++i)  {
 					small_vec[i]=this->initialization_value;
 				} 
 			}
 			//cout << "new vector" << endl;
-			hash->push_back(small_vec);
+			try {
+				hash->push_back(small_vec);
+			} catch (bad_alloc& ba) {
+				cerr << "error: (HAT push_back,push_back) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}	
 			//cout << hash->size() << endl;
 			//cout << "push was successful" << endl;
 		// choose to create new or use old vector:
@@ -212,7 +241,12 @@ public:
 			//cout << "1lastPos: " << nextFreePos << endl;
 			 
 			if (hash->size()-1 <= (currentArray+1) ) { // it might have been reserved earlier
-				small_vec = new T [arrayChunkSize];
+				try {
+					small_vec = new T [arrayChunkSize];
+				} catch (bad_alloc& ba) {
+					cerr << "error: (HAT) bad_alloc caught: " << ba.what() << endl;
+					exit(1);
+				}
 				
 				if (this->initialize_elements) {
 					for (size_t i =0; i < arrayChunkSize; ++i)  {
@@ -221,7 +255,12 @@ public:
 				} 
 				
 				//cout << "new vector!" << endl;
-				hash->push_back(small_vec);
+				try {
+					hash->push_back(small_vec);
+				} catch (bad_alloc& ba) {
+					cerr << "error: (HAT push_back, push_back) bad_alloc caught: " << ba.what() << endl;
+					exit(1);
+				}
 			}
 			
 			//cout << "hash->size(): " << hash->size() << endl;
@@ -250,8 +289,12 @@ public:
 		this->two_power = two_power; 
 		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power); 
 		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
-		hash = new vector< T * >();
-		
+		try {
+			hash = new vector< T * >();
+		} catch (bad_alloc& ba) {
+			cerr << "error: (HAT hash) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
+		}
 		
 		currentArray = 0;
 		nextFreePos = 0;
@@ -266,8 +309,12 @@ public:
 		this->two_power = two_power; 
 		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power); 
 		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
-		hash = new vector<T * >();
-		
+		try {
+			hash = new vector<T * >();
+		} catch (bad_alloc& ba) {
+			cerr << "error: (hash HAT) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
+		}
 		
 		currentArray = 0;
 		nextFreePos = 0;

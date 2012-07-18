@@ -196,7 +196,12 @@ public:
 		//cout << "append" << endl;
 		
 		if (this->start == NULL) {
-			this->start = new OListArray<T1, T2>();  
+			try {
+				this->start = new OListArray<T1, T2>(); 
+			} catch (bad_alloc& ba) {
+				cerr << "error: (olist) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
 			this->end = this->start;
 			this->lastArrayPosition = 0;
 			//cout << "appendcreatefirst" << endl;
@@ -208,7 +213,12 @@ public:
 				cerr << "error: (append) this->end->nextArray != NULL" << endl;
 				exit(1);	
 			}
-			this->end->nextArray = new OListArray<T1, T2>();
+			try {
+				this->end->nextArray = new OListArray<T1, T2>();
+			} catch (bad_alloc& ba) {
+				cerr << "error: (olist) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
 			this->end->nextArray->prevArray = this->end;
 			this->end = this->end->nextArray;
 			this->lastArrayPosition = 0;

@@ -194,7 +194,13 @@ short int * readBLOSUM(const char * blosum_file) {
 int getOffsets(string * sequence, vector<short> * vector_of_offsets, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint> &cluster_kmer_hash, int max_cluster) {
 	
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
-	KmerIterator * mykmerit = new KmerIterator(sequence,0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+	KmerIterator * mykmerit;
+	try {
+		mykmerit = new KmerIterator(sequence,0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+	} catch (bad_alloc& ba) {
+		cerr << "error: (getOffsets) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
 	int number_of_overlapping_kmers_seen = 0;
 	
 	//cout << "search: " << *sequence << endl;
@@ -260,7 +266,12 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 	
 	mymemberlist->resetIterator();
 	while (mymemberlist->nextElement()){
-		sorted_members.push_back(pair<int, short>(mymemberlist->getFirst(), mymemberlist->getSecond()));
+		try {
+			sorted_members.push_back(pair<int, short>(mymemberlist->getFirst(), mymemberlist->getSecond()));
+		} catch (bad_alloc& ba) {
+			cerr << "error: (compteConsensus, push_back) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
+		}	
 	}
 	
 	//for (int member = 0; member < sorted_members.size(); ++member) {
@@ -283,8 +294,13 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 	
 	int base_offset = sorted_members[0].second;
 	//cout << "base_offset: " << base_offset << endl;
-	string * new_consensus_seq = new string();
-
+	string * new_consensus_seq;
+	try {
+		new_consensus_seq = new string();
+	} catch (bad_alloc& ba) {
+		cerr << "error: (computeConsensus) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
 	// update offsets (leftmost member has now offset zero):
 	for (int member = 0; member < sorted_members.size(); ++member) {
 		//cout << "member: " << member << " offset(org): " << sorted_members[member].second << endl;
@@ -495,8 +511,13 @@ void addConsensusSequence(string * new_consensus_seq, int cluster, sparse_hash_m
 
 	
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
-	
-	KmerIterator * mykmer_insertion_it = new KmerIterator(new_consensus_seq, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+	KmerIterator * mykmer_insertion_it;
+	try {
+		mykmer_insertion_it = new KmerIterator(new_consensus_seq, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+	} catch (bad_alloc& ba) {
+		cerr << "error: (addConsensusSequence) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
 	mykmer_insertion_it->reset(0);
 
 	while (mykmer_insertion_it->nextKmer()) {
@@ -513,7 +534,12 @@ void addConsensusSequence(string * new_consensus_seq, int cluster, sparse_hash_m
 			//exit(0);
 			
 		} else {
-			mylist = new kmer_appearance_list();
+			try {
+				mylist = new kmer_appearance_list();
+			} catch (bad_alloc& ba) {
+				cerr << "error: (new kmer_appearance_list) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}		
 			cluster_kmer_hash[code]=mylist;
 			//cout << "add new list" << endl;
 		}
@@ -531,9 +557,13 @@ void addConsensusSequence(string * new_consensus_seq, int cluster, sparse_hash_m
 void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>& cluster_kmer_hash) {
 
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
-	
-	
-	KmerIterator * mykmer_deletion_it = new KmerIterator(consensus_old, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+	KmerIterator * mykmer_deletion_it;
+	try {
+		mykmer_deletion_it = new KmerIterator(consensus_old, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+	} catch (bad_alloc& ba) {
+		cerr << "error: (removeConsensusSequence) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}	
 	//mykmer_deletion_it->reset(0);
 	
 	//if (cluster == 606) {
@@ -866,8 +896,13 @@ void Clustgun::cluster(string inputfile) {
 
 	// ----------------------------------------
 	// read sequences into memory
-	HashedArrayTree<pair<string *, string * > > * inputSequences 
-				= new HashedArrayTree<pair<string *, string * > >(20); // 20 for 2^20=1MB chunks
+	HashedArrayTree<pair<string *, string * > > * inputSequences;
+	try {
+		inputSequences = new HashedArrayTree<pair<string *, string * > >(20); // 20 for 2^20=1MB chunks
+	} catch (bad_alloc& ba) {
+		cerr << "error: (inputSequences) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
 	
 	#ifdef DEBUG
 	inputSequences->name = string("inputSequences");
@@ -886,7 +921,12 @@ void Clustgun::cluster(string inputfile) {
 		if (descr.length() > 0 && sequence->length() >= minimal_input_sequence_length) {
 			//cout << "huhu: " << *sequence << endl;
 			total_read_count++;
-			inputSequences->push_back(pair<string *, string * >(new string(descr), sequence));
+			try {
+				inputSequences->push_back(pair<string *, string * >(new string(descr), sequence));
+			} catch (bad_alloc& ba) {
+				cerr << "error: (inputSeuqences->push_back) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
 			//cout << "pushed: " << inputSequences->size() << endl;	
 			//cout << *sequence << endl;
 			//exit(0);
@@ -946,14 +986,22 @@ void Clustgun::cluster(string inputfile) {
 		int sum;
 		int totsum;
 		
-		
-		array = new vector< pair<int, int> >;
-		
+		try {
+			array = new vector< pair<int, int> >;
+		} catch (bad_alloc& ba) {
+			cerr << "error: (array vector) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
+		}
 		// print hash table / put in array
 		for ( it=kmer_count_hash.begin() ; it != kmer_count_hash.end(); it++ ) {
 			if ((*it).second > low_abundance_threshold) {
 				// cout << string_int_2_kmer((*it).first) << " => " << (*it).second << endl;
-				array->push_back(pair<int, int >((*it).first, (*it).second));
+				try {
+					array->push_back(pair<int, int >((*it).first, (*it).second));
+				} catch (bad_alloc& ba) {
+					cerr << "error: (array->push_back) bad_alloc caught: " << ba.what() << endl;
+					exit(1);
+				}	
 			}
 		}
 		
@@ -999,24 +1047,45 @@ void Clustgun::cluster(string inputfile) {
 	
 	
 	// --------- CLUSTERS ----------- // cluster objects would have been nice, but I am afraid of memory inefficiency
-	HashedArrayTree<short> * countOfOverlappingKmers = new HashedArrayTree<short>(20, 0);
+	HashedArrayTree<short> * countOfOverlappingKmers;
+	try {
+		countOfOverlappingKmers = new HashedArrayTree<short>(20, 0);
+	} catch (bad_alloc& ba) {
+		cerr << "error: (countOfOverlappingKmers) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}	
 #ifdef DEBUG
 	countOfOverlappingKmers->name = string("countOfOverlappingKmers");
 #endif
-	HashedArrayTree<int> * lastreadseen = new HashedArrayTree<int>(20, -1); // this avoids initialization
+	HashedArrayTree<int> * lastreadseen;
+	try {
+		lastreadseen = new HashedArrayTree<int>(20, -1); // this avoids initialization
+	} catch (bad_alloc& ba) {
+		cerr << "error: (lastreadseen) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}	
 #ifdef DEBUG
 	lastreadseen->name = string("lastreadseen");
 #endif
-	HashedArrayTree<string * > * cluster_consensus_sequences = new HashedArrayTree<string * >(20, NULL);
+	HashedArrayTree<string * > * cluster_consensus_sequences;
+	try {
+		cluster_consensus_sequences = new HashedArrayTree<string * >(20, NULL);
+	} catch (bad_alloc& ba) {
+		cerr << "error: (cluster_consensus_sequences) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
 #ifdef DEBUG
 	cluster_consensus_sequences->name = string("cluster_consensus_sequences");
 #endif	
 	//HashedArrayTree<short> * cluster_consensus_offsets = new HashedArrayTree<short>(20, 0); // offset relative to seed read
 	
-	
-	
-	HashedArrayTree<cluster_member_list * > * cluster_member_lists = new HashedArrayTree<cluster_member_list * >(20, NULL);
-
+	HashedArrayTree<cluster_member_list * > * cluster_member_lists;
+	try {
+		cluster_member_lists = new HashedArrayTree<cluster_member_list * >(20, NULL);
+	} catch (bad_alloc& ba) {
+		cerr << "error: (cluster_member_lists) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
 #ifdef DEBUG
 	cluster_member_lists->name = string("cluster_member_lists");
 #endif
@@ -1066,10 +1135,13 @@ void Clustgun::cluster(string inputfile) {
 		//cout << "read_id: " << read_id<< endl;
 	
 		sequence = (*inputSequences)[read_id].second;
-		
-					
-		KmerIterator * mykmerit = new KmerIterator(sequence, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
-		
+		KmerIterator * mykmerit;
+		try {			
+			mykmerit = new KmerIterator(sequence, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+		} catch (bad_alloc& ba) {
+			cerr << "error: (new KmerIterator) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
+		}
 		//int max_cluster = -1;
 		//int max_cluster_kmer_count = 0;
 		
@@ -1414,8 +1486,12 @@ void Clustgun::cluster(string inputfile) {
 				//cout << mymemberlist << endl;
 				assert( (mymemberlist == NULL) );
 					
-				
-				mymemberlist = new cluster_member_list;
+				try {
+					mymemberlist = new cluster_member_list;
+				} catch (bad_alloc& ba) {
+					cerr << "error: (new cluster_member_list) bad_alloc caught: " << ba.what() << endl;
+					exit(1);
+				}
 				mymemberlist->append(read_id, 0);
 				
 				
@@ -1433,7 +1509,12 @@ void Clustgun::cluster(string inputfile) {
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[clusterhit]; // alias to a pointer
 				
 				if (mymemberlist == NULL){
-					mymemberlist = new cluster_member_list();
+					try {
+						mymemberlist = new cluster_member_list();
+					} catch (bad_alloc& ba) {
+						cerr << "error: (new cluster_member_list) bad_alloc caught: " << ba.what() << endl;
+						exit(1);
+					}
 				}
 				
 				mymemberlist->append(read_id, max_cluster_offsets[0]);
@@ -2026,7 +2107,6 @@ int main(int argc, const char * argv[])	{
 	po::variables_map vm;
 	try {
 
-		
 		po::store(po::command_line_parser(argc, argv).options(all).positional(p).run(), vm);
 		po::notify(vm);
 	} catch ( const boost::program_options::error& e ) {
