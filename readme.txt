@@ -13,10 +13,11 @@ tar xvfz sparsehash-2.0.2.tar.gz
 cd sparsehash-2.0.2
 ./configure --prefix=$HOME
 make
+make install
 
 2) Boost C++ libraries (http://www.boost.org)
-(you might also be able to install it from your systems software repository)
-wget http://sourceforge.net/projects/boost/files/boost/1.50.0/boost_1_50_0.tar.gz/download
+(you might also be able to install it from your systems software repository, e.g. ubuntu:  "sudo apt-get install libboost-dev")
+wget http://sourceforge.net/projects/boost/files/boost/1.50.0/boost_1_50_0.tar.gz
 tar xvfz boost_1_50_0.tar.gz
 cd boost_1_50_0
 ./bootstrap.sh --with-libraries=iostreams,program_options,system --prefix=$HOME
@@ -30,7 +31,7 @@ Linux/UNIX:
 BOOSTLIB=$HOME/local ; g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams -lboost_system  -lboost_program_options -I$BOOSTLIB/include -L$BOOSTLIB/lib  -m64 -Wl,-R $BOOSTLIB/lib -O3 -DDEBUG
 
 OSX:
-g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams-mt -lboost_system-mt  -lboost_program_options-mt -O3 -DDEBUG
+g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams-mt -lboost_system-mt  -lboost_program_options-mt -O3 -DDEBUG -std=c++0x
 
 
 RUN

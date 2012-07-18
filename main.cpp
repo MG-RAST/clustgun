@@ -783,7 +783,7 @@ void Clustgun::cluster(string inputfile) {
   
 	std::cout << "Hello, World!\n";
 
-	system("date");
+	(void) system("date");
 	time_t begin, end; 
 	time(&begin);
 	
@@ -1837,7 +1837,7 @@ void Clustgun::cluster(string inputfile) {
 			
 			
 			
-			output_stream << "> cluster" << current_cluster << " length=" << consensus->length() << " size=" << (*cluster_member_lists)[current_cluster]->getLength();
+			output_stream << ">" << prefixname << current_cluster << " length=" << consensus->length() << " size=" << (*cluster_member_lists)[current_cluster]->getLength();
 			
 			if (avgcov) {
 				output_stream << " avgcov=";
@@ -1861,7 +1861,7 @@ void Clustgun::cluster(string inputfile) {
 				}
 				
 				
-				double avgcov = (double)tot_len / (double) mymemberlist->getLength();
+				double avgcov = (double)tot_len / (double) consensus->length();
 				int avgcon_print = (int)(avgcov * 10); // restrict to one digit after decimal point
 				avgcov = (double) avgcon_print / (double) 10;
 				output_stream << avgcov ;
@@ -1968,7 +1968,7 @@ void Clustgun::cluster(string inputfile) {
 	delete aminoacid_occurence;
 	delete aminoacid_scores;
 		
-	system("date");
+	(void) system("date");
 	cerr << "end" << endl;
 	
 }
@@ -1999,10 +1999,15 @@ int main(int argc, const char * argv[])	{
 			kmernum_help.append(NumberToString(cluster_kmer_overlap_threshold));
 			kmernum_help.append(")");
 	
+	string name_help = string("fasta description prefix name (default \"");
+			name_help.append(prefixname);
+			name_help.append("\")");
+	
 	po::options_description options_visible("Options");
 	options_visible.add_options()
 		("sort",							"sort input sequences by length (slow!)")
 		("avgcov",							"show average coverage")
+		("name",	po::value< string >(),	name_help.c_str())
 		("list",							"list all members and their offsets of a cluster")
 		("kmernum",	po::value< int >(),		kmernum_help.c_str()) //"minimum number of k-mers required"
 		("help",							"display this information");
@@ -2080,6 +2085,10 @@ int main(int argc, const char * argv[])	{
 	
 	
 	Clustgun my_pc = Clustgun();
+	
+	if (vm.count("name")) {
+		prefixname=vm["name"].as< string >();
+	}
 	
 	if (vm.count("list")) {
 		my_pc.list_all_members = true;

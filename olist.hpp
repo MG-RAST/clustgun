@@ -204,7 +204,10 @@ public:
 			this->lastArrayPosition++;
 			//cout << "appendext" << endl;
 		} else {
-			if (this->end->nextArray != NULL) exit(1);
+			if (this->end->nextArray != NULL) {
+				cerr << "error: (append) this->end->nextArray != NULL" << endl;
+				exit(1);	
+			}
 			this->end->nextArray = new OListArray<T1, T2>();
 			this->end->nextArray->prevArray = this->end;
 			this->end = this->end->nextArray;

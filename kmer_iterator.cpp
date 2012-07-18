@@ -45,7 +45,7 @@ KmerIterator::KmerIterator(string* seq, int startpos, int kmerlength, const char
 	this->code =0;
 	this->coded_length = 0;
 	
-};
+}
 
 void KmerIterator::reset(int startpos){
 	this->code =0;
@@ -88,7 +88,7 @@ bool KmerIterator::nextKmer(){
 			for (int i = 0; i < sequence->length(); ++i) {
 				cout << i << ": " << sequence->at(i) << " " << (int) (sequence->at(i)) << endl;
 			}
-			exit(1);
+			std::exit(1);
 			// and set kmer_start_pos XXXXXXXXXXXXX
 			coded_length = 0;
 		}

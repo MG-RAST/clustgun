@@ -15,6 +15,8 @@
 #define NDEBUG
 #endif
 
+#include <cstdlib>
+#include <cstring>
 #include <assert.h>
 #include <map>
 #include <set>
@@ -43,10 +45,20 @@
 using namespace std;
 using google::sparse_hash_map; 
 
+#define GCC_VERSION (__GNUC__ * 10000 \
+	+ __GNUC_MINOR__ * 100 \
+	+ __GNUC_PATCHLEVEL__)
+
+
 #ifdef __APPLE__
 using tr1::hash;// ext::hash;  // or __gnu_cxx::hash, or maybe tr1::hash, depending on your OS
 #else
+#if GCC_VERSION >= 40300
+#include <unordered_map>
+using std::unordered_map; // hash set was removed: http://gcc.gnu.org/gcc-4.3/changes.html
+#else
 using  __gnu_cxx::hash;
+#endif
 #endif
 
 
@@ -75,7 +87,7 @@ const int windowScoreThreshold = 0; // total BLOSUM score required for each wind
 const int avgScoreThreshold = 3; // average BLOSUM score required for an overlap
 const char * blosum_file = "BLOSUM62";
 
-
+string prefixname = "cluster";
 
 //const int limit_input_reads = -1; // -1
 //const int maxclustercount = 5000000;
