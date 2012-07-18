@@ -783,7 +783,7 @@ void Clustgun::cluster(string inputfile) {
   
 	std::cout << "Hello, World!\n";
 
-	(void) system("date");
+	if( system("date") ) {};
 	time_t begin, end; 
 	time(&begin);
 	
@@ -1968,7 +1968,7 @@ void Clustgun::cluster(string inputfile) {
 	delete aminoacid_occurence;
 	delete aminoacid_scores;
 		
-	(void) system("date");
+	if (system("date")) {};
 	cerr << "end" << endl;
 	
 }
