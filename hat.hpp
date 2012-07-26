@@ -48,35 +48,25 @@ public:
 			return;
 		}
 		
-		
-		for (int i = 0; i<hash->size()-1; ++i){
-			//cout << "i: " << i << endl;
-			for (int j = 0 ; j < arrayChunkSize; ++j) {
-				//if (j > 1040000) {
-				//	cout << i << " - " << j << endl;
-				//	cout << (*hash)[i][j] << endl;
-				//}
-				if ((*hash)[i][j] != NULL ) {
-					//cout << i << " - " << j << endl;
-					//cout << (*hash)[i][j] << endl;
-					delete (*hash)[i][j];
-				}
+		for (int i = 0 ; i < this->capacity(); ++i ){
+			
+			#ifdef DEBUG
+			try {
+			if ( this->at(i) != this->initialization_value) {
+				delete this->at(i);
 			}
+			} catch (out_of_range& oor) {
+				cerr << "Out of Range error:(HAT: this->at(i) != this->initialization_value) " << oor.what() << endl;
+				exit(1);
+			}		
+			#else
+			if ( (*this)[i] != this->initialization_value) {
+				delete (*this)[i];
+			}
+			#endif
 			
 		}
-		
-		for (int j = 0 ; j < nextFreePos; ++j) {
-			//cout << "j: " << j << endl;
-			//if (j % 10000 == 0) {
-			//	cout << (hash->size()-1) << " -- " << j << endl;
-			//	cout << (*hash)[hash->size()-1][j] << endl;
-			//}
-			if ((*hash)[hash->size()-1][j] != NULL ) {
-				
-				
-				delete (*hash)[hash->size()-1][j];
-			}
-		}
+
 		
 	}
 
@@ -115,54 +105,65 @@ public:
 		return ((currentArray)*arrayChunkSize + nextFreePos);
 	}
 	
+	size_t capacity() {
+		return hash->size()*arrayChunkSize;
+	}
 	
 	void reserve (size_t x) {
 		
-		size_t requested_array = (x >> two_power);
+		//size_t requested_array = (x >> two_power);
 //cout << "reserve" << endl;
-		while (hash->size() < requested_array) {
+		while (hash->size()*arrayChunkSize < x) {
 			T * small_vec;
+			#ifdef DEBUG
 			try {
+			#endif
 				small_vec = new T [arrayChunkSize];
+			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (HAT reserve) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
+			#endif
 			if (initialize_elements) {
 				for (size_t i =0; i < arrayChunkSize; ++i)  {
 					small_vec[i]=this->initialization_value;
 				}
 			}
 			//cout << "reserve push A " << small_vec << endl;
+			#ifdef DEBUG
 			try {
+			#endif
 				hash->push_back(small_vec);
+			#ifdef DEBUG	
 			} catch (bad_alloc& ba) {
 				cerr << "error: (HAT reserve, push_back) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
-			}	
+			}
+			#endif
 		}
 		
-		if (requested_array*two_power < x) {
-			T * small_vec;
-			try {
-				small_vec = new T [arrayChunkSize];
-			} catch (bad_alloc& ba) {
-				cerr << "error: (HAT reserve) bad_alloc caught: " << ba.what() << endl;
-				exit(1);
-			}	
-			if (initialize_elements) {
-				for (size_t i =0; i < arrayChunkSize; ++i)  {
-					small_vec[i]=this->initialization_value;
-				}
-			}
-			//cout << "reserve push B" << small_vec  << endl;
-			try {
-				hash->push_back(small_vec);
-			} catch (bad_alloc& ba) {
-				cerr << "error: (HAT reserve, push_back) bad_alloc caught: " << ba.what() << endl;
-				exit(1);
-			}	
-		}
+//		if (requested_array*two_power < x) {
+//			T * small_vec;
+//			try {
+//				small_vec = new T [arrayChunkSize];
+//			} catch (bad_alloc& ba) {
+//				cerr << "error: (HAT reserve) bad_alloc caught: " << ba.what() << endl;
+//				exit(1);
+//			}	
+//			if (initialize_elements) {
+//				for (size_t i =0; i < arrayChunkSize; ++i)  {
+//					small_vec[i]=this->initialization_value;
+//				}
+//			}
+//			//cout << "reserve push B" << small_vec  << endl;
+//			try {
+//				hash->push_back(small_vec);
+//			} catch (bad_alloc& ba) {
+//				cerr << "error: (HAT reserve, push_back) bad_alloc caught: " << ba.what() << endl;
+//				exit(1);
+//			}	
+//		}
 		//cout << "reserve len: " << hash->size() << endl;
 		
 	}
@@ -170,12 +171,13 @@ public:
 	
 	inline T& at(size_t x){
 		// boundary check and increase memory if needed
+
+		
 		if (initialize_elements) {
 			reserve(x);
 		} else {
 			if ((x >> two_power) > currentArray) {
 				cerr << "(x >> two_power) > currentArray" << endl;
-				
 				exit(1);
 			}
 			if ((x >> two_power) == (currentArray) && (x & this->mod_mask) >= nextFreePos) {
@@ -184,7 +186,19 @@ public:
 			}
 		}
 		
-		return hash->at(x >> two_power)[ x & this->mod_mask];
+		#ifdef DEBUG
+		
+		try {
+			T& xxx = hash->at(x >> two_power)[ x & this->mod_mask];
+		} catch (out_of_range& oor) {
+			cerr << "Out of Range error:(HAT: xxx = hash->at(x >> two_power)[ x & this->mod_mask]e) " << oor.what() << endl;
+			exit(1);
+		}
+		
+		#endif
+		
+		return (*hash)[x >> two_power][ x & this->mod_mask];
+		
 	}
 	
 	
@@ -204,35 +218,56 @@ public:
 		//cout << "array: " << array<< endl;
 		//cout << "  arraypos: " <<arraypos << endl;
 		
-		
+		#ifdef DEBUG
+		if ((x >> two_power) >= hash->size()) {
+			cerr << "(x >> two_power) >= hash->size()" << endl;
+			cerr << "(x >> two_power): " <<  (x >> two_power) << endl;
+			cerr << "x: " << x << " hash->size():" << hash->size() << endl;
+			cerr << "this->capacity(): " << this->capacity() << endl;
+			cerr << this->name << endl;
+			exit(1);
+		}
+		#endif
 		
 		return (*hash)[x >> two_power][ x & this->mod_mask]; 
 	}
 	
+#ifdef DEBUG 
+	int push_back(T element) {
+#else
 	void push_back(T element) {
-		//cout << "lastPos: " << nextFreePos << endl;
+#endif
+		//cerr << "lastPos: " << nextFreePos << endl;
 		
 		T * small_vec;
 		
 		if (currentArray == 0 && nextFreePos == 0) {
+			#ifdef DEBUG
 			try {
+			#endif
 				small_vec = new T [arrayChunkSize];
+			#ifdef DEBUG	
 			} catch (bad_alloc& ba) {
 				cerr << "error: (HAT) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
+			#endif
 			if (this->initialize_elements) {
 				for (size_t i =0; i < arrayChunkSize; ++i)  {
 					small_vec[i]=this->initialization_value;
 				} 
 			}
 			//cout << "new vector" << endl;
+			#ifdef DEBUG
 			try {
+			#endif
 				hash->push_back(small_vec);
+			#ifdef DEBUG	
 			} catch (bad_alloc& ba) {
 				cerr << "error: (HAT push_back,push_back) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}	
+			#endif
 			//cout << hash->size() << endl;
 			//cout << "push was successful" << endl;
 		// choose to create new or use old vector:
@@ -241,12 +276,16 @@ public:
 			//cout << "1lastPos: " << nextFreePos << endl;
 			 
 			if (hash->size()-1 <= (currentArray+1) ) { // it might have been reserved earlier
+				#ifdef DEBUG
 				try {
+				#endif
 					small_vec = new T [arrayChunkSize];
+				#ifdef DEBUG	
 				} catch (bad_alloc& ba) {
 					cerr << "error: (HAT) bad_alloc caught: " << ba.what() << endl;
 					exit(1);
 				}
+				#endif
 				
 				if (this->initialize_elements) {
 					for (size_t i =0; i < arrayChunkSize; ++i)  {
@@ -255,12 +294,16 @@ public:
 				} 
 				
 				//cout << "new vector!" << endl;
+				#ifdef DEBUG
 				try {
+				#endif
 					hash->push_back(small_vec);
+				#ifdef DEBUG
 				} catch (bad_alloc& ba) {
 					cerr << "error: (HAT push_back, push_back) bad_alloc caught: " << ba.what() << endl;
 					exit(1);
 				}
+				#endif
 			}
 			
 			//cout << "hash->size(): " << hash->size() << endl;
@@ -280,7 +323,9 @@ public:
 		//*this)[nextFreePos] = element;
 		//cout << "small_vec->size(): " << small_vec->size() << endl;
 		nextFreePos++;
-		
+		#ifdef DEBUG
+		return nextFreePos-1;
+		#endif
 	}	
 	
 	HashedArrayTree<T> (size_t two_power) {
@@ -289,12 +334,16 @@ public:
 		this->two_power = two_power; 
 		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power); 
 		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
+		#ifdef DEBUG
 		try {
+		#endif
 			hash = new vector< T * >();
+		#ifdef DEBUG	
 		} catch (bad_alloc& ba) {
 			cerr << "error: (HAT hash) bad_alloc caught: " << ba.what() << endl;
 			exit(1);
 		}
+		#endif
 		
 		currentArray = 0;
 		nextFreePos = 0;
@@ -309,13 +358,16 @@ public:
 		this->two_power = two_power; 
 		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power); 
 		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
+		#ifdef DEBUG
 		try {
+		#endif
 			hash = new vector<T * >();
+		#ifdef DEBUG
 		} catch (bad_alloc& ba) {
 			cerr << "error: (hash HAT) bad_alloc caught: " << ba.what() << endl;
 			exit(1);
 		}
-		
+		#endif
 		currentArray = 0;
 		nextFreePos = 0;
 		//this->reserve(arrayChunkSize);

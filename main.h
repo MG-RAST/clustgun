@@ -34,7 +34,9 @@
 #include "fasta_parser.hpp"
 
 //#include <iomanip>
+#ifdef TIME
 #include <time.h>
+#endif
 
 #include <boost/program_options/detail/config_file.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -116,6 +118,7 @@ public:
 	bool list_all_members;
 	bool sort_input_seq;
 	bool avgcov;
+	string outputfile;
 	
 	Clustgun() {
 		list_all_members = false;
@@ -172,8 +175,11 @@ pair<bool, T> majority_vote(vector<T> * vector_of_offsets, int number_of_element
 	T current_vote_candidate;
 	T e;
 	for (int i = 0; i < number_of_elements; ++i) {
+		#ifdef DEBUG
+		e = vector_of_offsets->at(i);
+		#else
 		e = (*vector_of_offsets)[i];
-
+		#endif
 		
 		//cout << "e: " << e<< endl;
 		if (majority_vote_counter == 0) {
@@ -198,7 +204,11 @@ pair<bool, T> majority_vote(vector<T> * vector_of_offsets, int number_of_element
 		// need to count
 		int candidate_count = 0;
 		for (int i = 0; i <= number_of_elements-1; ++i) {
+			#ifdef DEBUG
+			if (e == vector_of_offsets->at(i)) {
+			#else
 			if (e == (*vector_of_offsets)[i]) {
+			#endif
 				++candidate_count;
 			}
 		}

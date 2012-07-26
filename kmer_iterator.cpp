@@ -76,7 +76,12 @@ bool KmerIterator::nextKmer(){
 		//int aa = aminoacid_ASCII2int[(*sequence)[kmer_start_pos+kmerlength-1]];
 		
 #ifdef DEBUG
-		int aa = aminoacid_ASCII2int[sequence->at(kmer_start_pos+kmerlength-1)]; // with boundary check on sequence
+		char c = sequence->at(kmer_start_pos+kmerlength-1); // with boundary check on sequence
+		if ((int)c < 0 ) { // that could happen if char is signed by default... I should check that...
+			cerr << "(int)c < 0" << endl;
+			exit(1);
+		}
+		int aa = aminoacid_ASCII2int[c]; 
 #else
 		int aa = aminoacid_ASCII2int[(*sequence)[kmer_start_pos+kmerlength-1]];
 #endif

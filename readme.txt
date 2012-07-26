@@ -28,10 +28,10 @@ git clone git://github.com/MG-RAST/clustgun.git
 cd clustgun
 
 Linux/UNIX:
-BOOSTLIB=$HOME/local ; g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams -lboost_system  -lboost_program_options -I$BOOSTLIB/include -L$BOOSTLIB/lib  -m64 -Wl,-R $BOOSTLIB/lib -O3 -DDEBUG -std=c++0x
+BOOSTLIB=$HOME/local ; g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams -lboost_system  -lboost_program_options -I$BOOSTLIB/include -L$BOOSTLIB/lib  -m64 -Wl,-R $BOOSTLIB/lib -O3 -DDEBUG -DTIME -std=c++0x
 
 OSX:
-g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams-mt -lboost_system-mt  -lboost_program_options-mt -O3 -DDEBUG
+g++ main.cpp kmer_iterator.cpp fasta_parser.cpp -o clustgun -lboost_iostreams-mt -lboost_system-mt  -lboost_program_options-mt -O3 -DDEBUG -DTIME
 
 
 RUN

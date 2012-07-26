@@ -65,10 +65,36 @@ public:
 	}
 	
 	T1& getFirst(){
+		
+		#ifdef DEBUG
+		if (this->currentListArray == NULL ) {
+			cerr << "error: (getFirst) this->currentListArray == NULL" << endl;
+			exit(1);
+		}
+		
+		if (this->currentArrayPosition < 0) {
+			cerr << "error: (getFirst) this->currentArrayPosition < 0" << endl;
+			exit(1);
+		}
+		#endif
+		
 		return this->currentListArray->data_array1[this->currentArrayPosition];
 	}
 	
 	T2& getSecond(){
+		
+		#ifdef DEBUG
+		if (this->currentListArray == NULL ) {
+			cerr << "error: (getSecond) this->currentListArray == NULL" << endl;
+			exit(1);
+		}
+		
+		if (this->currentArrayPosition < 0) {
+			cerr << "error: (getSecond) this->currentArrayPosition < 0" << endl;
+			exit(1);
+		}
+		#endif
+		
 		return this->currentListArray->data_array2[this->currentArrayPosition];
 	}
 	
@@ -77,7 +103,17 @@ public:
 		
 		// overwrite entry with last entrythis->
 		if (this->currentListArray != this->end || this->currentArrayPosition != lastArrayPosition) { // not necessary if we want do delete the last element
+			
+			//cout << "this->currentArrayPosition: " << this->currentArrayPosition << endl;
+			
+			//for (int i  = 0; i <= 5 ; ++i) {
+			//	cout << i << " __" << this->currentListArray->data_array1[i] << endl;
+			//	cout << i << " __" << this->currentListArray->data_array2[i] << endl;
+			//}
+			
 			//cout << "1) this->currentListArray->data_array1[this->currentArrayPosition]: " << this->currentListArray->data_array1[this->currentArrayPosition]<< endl;
+			
+			
 			this->currentListArray->data_array1[this->currentArrayPosition]=this->end->data_array1[this->lastArrayPosition];
 			//cout << "2) this->currentListArray->data_array1[this->currentArrayPosition]: " << this->currentListArray->data_array1[this->currentArrayPosition]<< endl;
 			this->currentListArray->data_array2[this->currentArrayPosition]=this->end->data_array2[this->lastArrayPosition];
@@ -133,9 +169,11 @@ public:
 		int length = 0;
 		while (currentListArray_tmp != end) {
 			for (int i =0 ; i< lengthofmyolistarrays; ++i) {
-				cout << (length + i) << ": " <<  currentListArray_tmp->data_array1[i] << endl;
+				//cout << (length + i) << ": " <<  currentListArray_tmp->data_array1[i] << endl;
+				cout << (length + i) << ": (" <<  currentListArray_tmp->data_array1[i] << "," << currentListArray_tmp->data_array2[i] << ")"<< endl;
 				
 			}
+			cout << "--" << endl;
 			length += lengthofmyolistarrays;
 			currentListArray_tmp = currentListArray_tmp->nextArray;
 		}
@@ -196,12 +234,16 @@ public:
 		//cout << "append" << endl;
 		
 		if (this->start == NULL) {
+			#ifdef DEBUG
 			try {
+			#endif
 				this->start = new OListArray<T1, T2>(); 
+			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (olist) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
+			#endif
 			this->end = this->start;
 			this->lastArrayPosition = 0;
 			//cout << "appendcreatefirst" << endl;
@@ -209,18 +251,30 @@ public:
 			this->lastArrayPosition++;
 			//cout << "appendext" << endl;
 		} else {
+			#ifdef DEBUG
 			if (this->end->nextArray != NULL) {
 				cerr << "error: (append) this->end->nextArray != NULL" << endl;
 				exit(1);	
 			}
+			#endif
+			
+			OListArray<T1, T2> * newarray;
+			#ifdef DEBUG
 			try {
-				this->end->nextArray = new OListArray<T1, T2>();
+			#endif
+				newarray = new OListArray<T1, T2>();
+			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (olist) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
-			this->end->nextArray->prevArray = this->end;
-			this->end = this->end->nextArray;
+			#endif
+			
+			// link old end and new end:
+			this->end->nextArray = newarray;
+			newarray->prevArray = this->end;
+			
+			this->end = newarray;
 			this->lastArrayPosition = 0;
 			
 			//cout << "appendnew-----" << endl;
