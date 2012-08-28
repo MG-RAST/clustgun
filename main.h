@@ -32,6 +32,8 @@
 #include "hat.hpp"
 #include "kmer_iterator.hpp"
 #include "fasta_parser.hpp"
+#include "binarypath.hpp"
+
 
 //#include <iomanip>
 #ifdef TIME
@@ -41,6 +43,7 @@
 #include <boost/program_options/detail/config_file.hpp>
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
+
 
 
 
@@ -66,11 +69,12 @@ using  __gnu_cxx::hash;
 
 typedef short aminoacid;
 
+template <class T1, class T2, class T3> class triplet;
 
+const int aminoacid_count = 21;
+const char aminoacid_int2ASCII[aminoacid_count+1] = "ARNDCEQGHILKMFPSTWYV*"; // 20 AA according to wikipedia.. ;) plus stop codon "*"
+aminoacid aminoacid_ASCII2int[256];
 
-const char aminoacid_int2ASCII[21] = "ARNDCEQGHILKMFPSTWYV"; // 20 AA according to wikipedia.. ;)
-aminoacid aminoacid_ASCII2int[256] = { -1 };
-const int aminoacid_count = 20;
 
 // k-mer filtering, not used currently
 const int low_abundance_threshold=5; // for kmers in the whole set of reads
@@ -87,7 +91,7 @@ const double min_overlap_fraction  = 0.2; // an overlap length of 20% of the len
 const int windowLength = 10; // length of sliding window
 const int windowScoreThreshold = 0; // total BLOSUM score required for each window
 const int avgScoreThreshold = 3; // average BLOSUM score required for an overlap
-const char * blosum_file = "BLOSUM62";
+string blosum_file = "BLOSUM62";
 
 string prefixname = "cluster";
 
@@ -110,7 +114,7 @@ typedef OList<int, short> kmer_appearance_list; // (Cluster, Offset)
 
 string string_int_2_kmer(int kmer_code);
 
-
+bool fexists(string filename);
 
 
 class Clustgun {
@@ -131,6 +135,19 @@ public:
 	
 };
 
+template <class T1, class T2, class T3>
+class triplet {
+public:
+	T1 first;
+	T2 second;
+	T3 third;
+	
+	triplet(T1 a, T2 b, T3 c) {
+		first = a;
+		second = b;
+		third = c;
+	}
+};
 
 
 template <typename T>
@@ -142,13 +159,17 @@ string NumberToString ( T Number )
 }
 
 
+bool fexists(string filename)
+{
+	ifstream ifile(filename.c_str());
+	return ifile;
+}
 
 struct delete_object
 {
 	template <typename T>
 	void operator()(T *ptr){ delete ptr;}
 };
-
 
 
 template <class T>
@@ -164,11 +185,11 @@ void DeleteContainerWithPointers (T * container) {
 
 
 template <class T>
-pair<bool, T> majority_vote(vector<T> * vector_of_offsets, int number_of_elements) {
+triplet<bool, T, int> majority_vote(vector<T> * vector_of_offsets, int number_of_elements) {
 	// do a majority vote on the offsets, requires confirmation?	
 	
 	if (number_of_elements == 0) {
-		return pair<bool, T>(false, 0);
+		return triplet<bool, T, int>(false, (T)0, 0);
 	}
 	
 	int majority_vote_counter = 0;
@@ -221,7 +242,9 @@ pair<bool, T> majority_vote(vector<T> * vector_of_offsets, int number_of_element
 //		exit(1);
 //	}
 	
-	return pair<bool, T>(majority_found,current_vote_candidate);
+		
+	// warning: majority_vote_counter is only a lower bound on the count of matching kmers!
+	return triplet<bool, T, int>(majority_found,current_vote_candidate, majority_vote_counter);
 }
 
 

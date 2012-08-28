@@ -7,12 +7,12 @@ cat ../00000.Ecoli.tiling.10x.faa.consensus | formatdb -i stdin -p T -n test
 against proteins:
 evaluate consensus
 blastall -p blastp -i 00000.Ecoli.tiling.10x.faa.consensus -d ecoli_db/ecoli_db -m9 -o 00000.Ecoli.tiling.10x.faa.consensus.blastp -F F
-../projects/perl_scripts/evaluate_protcluster/evaluate_protcluster.pl ./00000.Ecoli.tiling.10x.faa.consensus ./EC.faa ./00000.Ecoli.tiling.10x.faa.consensus.blastp 50
+../projects/perl_scripts/evaluate_clustgun/evaluate_clustgun.pl ./00000.Ecoli.tiling.10x.faa.consensus ./EC.faa ./00000.Ecoli.tiling.10x.faa.consensus.blastp 50
 
 evaluate reference (how good is reference covered by consensus)
 cat ../00000.Ecoli.tiling.10x.faa.consensus | formatdb -i stdin -p T -n condb
 blastall -p blastp -i EC.faa -d condb/condb -m9 -o ./EC.faa.blastp -F F
-../projects/perl_scripts/evaluate_protcluster/evaluate_protcluster.pl ./EC.faa ./00000.Ecoli.tiling.10x.faa.consensus ./EC.faa.blastp 0
+../projects/perl_scripts/evaluate_clustgun/evaluate_clustgun.pl ./EC.faa ./00000.Ecoli.tiling.10x.faa.consensus ./EC.faa.blastp 0
 
 
 against genome:

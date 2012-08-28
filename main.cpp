@@ -282,14 +282,14 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 	while (mymemberlist->nextElement()){
 		#ifdef DEBUG
 		try {
-#endif
+		#endif
 			sorted_members.push_back(pair<int, short>(mymemberlist->getFirst(), mymemberlist->getSecond()));
-			#ifdef DEBUG
+		#ifdef DEBUG
 		} catch (bad_alloc& ba) {
 			cerr << "error: (compteConsensus, push_back) bad_alloc caught: " << ba.what() << endl;
 			exit(1);
 		}	
-#endif
+		#endif
 	}
 	
 	//for (int member = 0; member < sorted_members.size(); ++member) {
@@ -315,16 +315,16 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 	string * new_consensus_seq;
 	#ifdef DEBUG
 	try {
-#endif
+	#endif
 		new_consensus_seq = new string();
-		#ifdef DEBUG
+	#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (computeConsensus) bad_alloc caught: " << ba.what() << endl;
 		exit(1);
 	}
-#endif
+	#endif
 	// update offsets (leftmost member has now offset zero):
-	for (int member = 0; member < sorted_members.size(); ++member) {
+	for (int member = 0; member < (int) sorted_members.size(); ++member) {
 		//cout << "member: " << member << " offset(org): " << sorted_members[member].second << endl;
 		
 		#ifdef DEBUG
@@ -380,6 +380,12 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 			int member_length = ((*inputSequences)[sorted_members[member].first].second)->length();
 			#endif
 			
+			if (last_alignment_char >= 100 ) {
+				break; // 100 aa's should be enough for consensus
+			}
+				
+			
+			
 			if (sorted_members[member].second + member_length - 1 < current_ali_position ){
 			//if (sorted_members[member].second + ((*inputSequences)[sorted_members[member].first].second)->length() - 1 < current_ali_position ){	
 				if (!saw_aa) {
@@ -425,7 +431,7 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 			break;
 		}
 		
-		pair<bool, char > major_aa =  majority_vote<char>(alignment_column, last_alignment_char+1);
+		triplet<bool, char, int> major_aa =  majority_vote<char>(alignment_column, last_alignment_char+1);
 		
 		#ifdef DEBUG
 		char test_char = major_aa.second;
@@ -467,15 +473,21 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 					exit(1);
 				}
 				
-				try {
-				aminoacid_occurence->at(aa) = true;
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(aminoacid_occurence->at(aa) = true;) " << oor.what() << endl;
-					exit(1);
-				}	
+				if (aa != -1 ) {
+					try {
+						aminoacid_occurence->at(aa) = true;
+					} catch (out_of_range& oor) {
+						cerr << "Out of Range error:(aminoacid_occurence->at(aa) = true;) " << oor.what() << endl;
+						exit(1);
+					}
+				}
+				
+					
 				#else
 				aminoacid aa = aminoacid_ASCII2int[(*alignment_column)[i]];
-				(*aminoacid_occurence)[aa] = true;
+				if (aa != -1 ) {
+					(*aminoacid_occurence)[aa] = true;
+				}
 				#endif 
 				
 			}
@@ -774,7 +786,7 @@ void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_m
 }
 
 
-bool computeSequenceOverlap(int offset, string * a, string * b, short * score_matrix) {
+bool computeSequenceOverlap(int offset, string * a, string * b, short * score_matrix, int majority_vote_count) {
 	int i = max(0, offset);
 	int j = i - offset;
 	
@@ -806,6 +818,12 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 	if (overlap_length < min_overlap_length) {
 		return false;
 	}
+	
+	//if majority_vote_count indicates high similarity
+	if (majority_vote_count >= (int)(overlap_length-kmerlength+1)*0.8) {
+		return true;
+	}
+	
 	
 	int min_required_length = (int) ((double)min(a_len, b_len)*(double)min_overlap_fraction);
 	
@@ -1007,7 +1025,11 @@ void Clustgun::cluster(string inputfile) {
 	// create mappings of amino acid ASCII to int and back.
 	
 	cout << "initialize alphabet mapping... \"" << aminoacid_int2ASCII << "\""<< endl;
-	for (aminoacid i = 0 ; i<20; ++i) {
+
+	// init with -1
+	std::fill_n(aminoacid_ASCII2int, 256, -1);
+	
+	for (aminoacid i = 0 ; i<aminoacid_count; ++i) {
 		char aa = aminoacid_int2ASCII[i];
 		//cout << aa << " " << i << endl;
 		aminoacid_ASCII2int[aa]=i;
@@ -1017,7 +1039,42 @@ void Clustgun::cluster(string inputfile) {
 	}
   
 	
-	short * score_matrix = readBLOSUM(blosum_file);
+	//for (int i = 0 ; i<255; ++i) {
+	//	cout << i << ": " << (char) i  << " " << aminoacid_ASCII2int[i] << endl;
+	//}
+	
+	
+	// search BLOSUM file
+	string blosum_file_confirmed;
+	bool matrix_exists = fexists(blosum_file);
+	
+	if (matrix_exists) {
+		
+		blosum_file_confirmed = blosum_file;
+	} else {
+		
+		size_t found=blosum_file.find('/');
+		if (found != string::npos) {
+			// already seems to an abosulte path name
+			cerr << "error: (a) blosum file not found: " << blosum_file << endl;
+			exit(1);
+		} 
+		
+		// try to find blosum file in directory of the binary
+		string newfilename = getbinarypath();
+		newfilename.append("/");
+		newfilename.append(blosum_file);
+		//cout << "try: " << newfilename << endl;
+		matrix_exists = fexists(newfilename);
+		
+		if (!matrix_exists) {
+			cerr <<  "error: (b) blosum file not found: " << blosum_file << endl;
+			exit(1);
+		}
+		blosum_file_confirmed = newfilename;
+	}
+	
+	short * score_matrix = readBLOSUM(blosum_file_confirmed.c_str());
 	
 	
 	// ------------------------------------------------------------
@@ -1041,8 +1098,7 @@ void Clustgun::cluster(string inputfile) {
 	string * zcat_command = new string("/bin/zcat"); 
 #endif
 
-	
-	
+
 	
 		
 	
@@ -1088,14 +1144,14 @@ void Clustgun::cluster(string inputfile) {
 	HashedArrayTree<pair<string *, string * > > * inputSequences;
 	#ifdef DEBUG
 	try {
-#endif
+	#endif
 		inputSequences = new HashedArrayTree<pair<string *, string * > >(20); // 20 for 2^20=1MB chunks
 		#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (inputSequences) bad_alloc caught: " << ba.what() << endl;
 		exit(1);
 	}
-#endif
+	#endif
 	
 	#ifdef DEBUG
 	inputSequences->name = string("inputSequences");
@@ -1116,14 +1172,14 @@ void Clustgun::cluster(string inputfile) {
 			total_read_count++;
 			#ifdef DEBUG
 			try {
-#endif
+			#endif
 				inputSequences->push_back(pair<string *, string * >(new string(descr), sequence));
-				#ifdef DEBUG
+			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (inputSeuqences->push_back) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
-#endif
+			#endif
 			//cout << "pushed: " << inputSequences->size() << endl;	
 			//cout << *sequence << endl;
 			//exit(0);
@@ -1185,28 +1241,28 @@ void Clustgun::cluster(string inputfile) {
 		
 		#ifdef DEBUG
 		try {
-#endif
+		#endif
 			array = new vector< pair<int, int> >;
 			#ifdef DEBUG
 		} catch (bad_alloc& ba) {
 			cerr << "error: (array vector) bad_alloc caught: " << ba.what() << endl;
 			exit(1);
 		}
-#endif
+		#endif
 		// print hash table / put in array
 		for ( it=kmer_count_hash.begin() ; it != kmer_count_hash.end(); it++ ) {
 			if ((*it).second > low_abundance_threshold) {
 				// cout << string_int_2_kmer((*it).first) << " => " << (*it).second << endl;
 				#ifdef DEBUG
 				try {
-#endif
+				#endif
 					array->push_back(pair<int, int >((*it).first, (*it).second));
-					#ifdef DEBUG
+				#ifdef DEBUG
 				} catch (bad_alloc& ba) {
 					cerr << "error: (array->push_back) bad_alloc caught: " << ba.what() << endl;
 					exit(1);
 				}	
-#endif
+				#endif
 			}
 		}
 		
@@ -1650,7 +1706,7 @@ void Clustgun::cluster(string inputfile) {
 																  max_cluster_id_array[cluster_it]);
 				
 				// majority vote on offsets				
-				pair<bool, short> major = majority_vote<short>(vector_of_offsets, number_of_overlapping_kmers_seen);
+				triplet<bool, short, int> major = majority_vote<short>(vector_of_offsets, number_of_overlapping_kmers_seen);
 				bool overlap_found=major.first;
 				short majority_offset=major.second;
 				
@@ -1719,7 +1775,7 @@ void Clustgun::cluster(string inputfile) {
 					}
 					
 					
-					overlap_found = computeSequenceOverlap(majority_offset, consensus_seq, sequence, score_matrix);
+					overlap_found = computeSequenceOverlap(majority_offset, consensus_seq, sequence, score_matrix, major.third);
 					
 				
 					//exit(1);
@@ -2039,7 +2095,7 @@ void Clustgun::cluster(string inputfile) {
 				//cout << "seq: " << *sequence << endl;
 				//cout << "o: " << offset_diff << endl;
 				
-				bool has_overlap = computeSequenceOverlap(offset_diff, consensus_1, consensus_2, score_matrix);
+				bool has_overlap = computeSequenceOverlap(offset_diff, consensus_1, consensus_2, score_matrix, 0);
 				
 				//cout << (has_overlap?string("true"):string("false")) << endl;
 				
@@ -2237,7 +2293,17 @@ void Clustgun::cluster(string inputfile) {
 	// write consensus sequences to output file
 	
 	if (this->outputfile.length() == 0) {
-		this->outputfile = string(inputfile)+string(".consensus");
+		
+		size_t found  = inputfile.find_last_of('/');
+		if (found == string::npos) {
+			this->outputfile = string(inputfile)+string(".consensus");
+			
+		} else {
+			this->outputfile = inputfile.substr(found+1, inputfile.length());
+			this->outputfile.append(".consensus");
+		}
+		
+		//this->outputfile = string(inputfile)+string(".consensus");
 	}
 	cerr << " done. write results into output file \"" << outputfile << "\"... " << endl;
 
@@ -2469,10 +2535,13 @@ void usage(boost::program_options::options_description& options) {
 
 int main(int argc, const char * argv[])	{
 	
+	
+	
+	
+	
 	// ----------------------------------
 	// define program options
 	namespace po = boost::program_options;
-	
 	
 	string	kmernum_help = string("minimum number of k-mers required (default ");
 			kmernum_help.append(NumberToString(cluster_kmer_overlap_threshold));
@@ -2482,13 +2551,17 @@ int main(int argc, const char * argv[])	{
 			name_help.append(prefixname);
 			name_help.append("\")");
 	
+	string blosum_help = string("BLOSUM file (default: ");
+		blosum_help.append(blosum_file);
+		blosum_help.append(")");
+	
 	po::options_description options_visible("Options");
 	options_visible.add_options()
 		
 		("sort",							"sort input sequences by length (slow!)")
 		
 		("kmernum",	po::value< int >(),		kmernum_help.c_str()) //"minimum number of k-mers required"
-		
+		("blosum",	po::value< string >(),	blosum_help.c_str())
 		("output",	po::value< string >(),	"output file")
 		("avgcov",							"show average coverage")
 		("name",	po::value< string >(),	name_help.c_str())
@@ -2574,6 +2647,10 @@ int main(int argc, const char * argv[])	{
 	
 	if (vm.count("output")) {
 		my_pc.outputfile=vm["output"].as< string >();
+	}
+	
+	if (vm.count("blosum")) {
+		blosum_file=vm["output"].as< string >();
 	}
 	
 	if (vm.count("list")) {
