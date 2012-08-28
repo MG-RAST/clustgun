@@ -29,15 +29,15 @@ download:
 > cd clustgun
 
 compile clustgun:
+if you installed the libraries as above:
+> make PREFIX=${HOME}
+if your libraries are installed in systems default locations
 > make
-or
-> make MACRO='-DEBUG -DTIME'
-
-if libraries are not installed in system default directories as in the example above:
+if your libraries are somewhere else:
 > make INCLUDES='-I${HOME}/local/include' LFLAGS='-L${HOME}/local/lib ' LDFLAGS='-Wl,-R ${HOME}/local/lib'
+and optionally you may want use macros like these:
+> make CFLAGS='-DEBUG -DTIME'
 
-#sometimes needed:
-#> make CFLAGS='-std=c++0x'
 
 
 old:
