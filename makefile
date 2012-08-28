@@ -2,7 +2,19 @@
 # which OS
 UNAME := $(shell uname)
 
-CC=g++
+CXX=g++
+
+# gwich gcc version
+GCC_MAJOR    := $(shell $(CXX) -dumpversion 2>&1 | cut -d'.' -f1)
+GCC_MINOR    := $(shell $(CXX) -dumpversion 2>&1 | cut -d'.' -f2)
+
+# test for >= 4.3
+GCCVERSIONGTEQ43 := $(shell expr `gcc -dumpversion | cut -f1,2 -d.` \> 4.3)
+
+ifeq "$(GCCVERSIONGTEQ43)" "1"
+    override CFLAGS += -std=c++0x
+endif
+
 override CFLAGS += -O3 -m64
 # override directive allows me to append values to variables from makefile arguments without overwriting
 override LDFLAGS +=
@@ -31,10 +43,10 @@ debug: CFLAGS += -DDEBUG
 debug: all
 	
 $(EXECUTABLE): $(OBJECTS) 
-	$(CC) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) $(LFLAGS) $(LDFLAGS)
+	$(CXX) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) $(LFLAGS) $(LDFLAGS)
 
 .cpp.o:
-	$(CC) -c $(CFLAGS) $(INCLUDES) $(MACRO) $< -o $@  
+	$(CXX) -c $(CFLAGS) $(INCLUDES) $(MACRO) $< -o $@  
 #$(LIBS) 
 
 
