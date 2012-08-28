@@ -3,9 +3,9 @@
 UNAME := $(shell uname)
 
 CC=g++
-override CFLAGS= -O3 -m64
+override CFLAGS += -O3 -m64
 # override directive allows me to append values to variables from makefile arguments without overwriting
-#override LDFLAGS=
+override LDFLAGS +=
 
 
 ifeq ($(UNAME), Linux)
@@ -31,7 +31,7 @@ debug: CFLAGS += -DDEBUG
 debug: all
 	
 $(EXECUTABLE): $(OBJECTS) 
-	$(CC) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) $(LFLAGS)
+	$(CC) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) $(LFLAGS) $(LDFLAGS)
 
 .cpp.o:
 	$(CC) -c $(CFLAGS) $(INCLUDES) $(MACRO) $< -o $@  
