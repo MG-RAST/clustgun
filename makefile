@@ -37,7 +37,7 @@ MACRO=
 all: $(SOURCES) $(EXECUTABLE)
 
 clean :
-	rm $(EXECUTABLE) $(OBJECTS)
+	rm -f $(EXECUTABLE) $(OBJECTS)
 
 debug: CFLAGS += -DDEBUG
 debug: all
