@@ -12,14 +12,6 @@
 
 
 
-int str2int(string& text){
-	
-	int number = std::atoi( text.c_str() );
-	
-	return number;
-	
-}
-
 
 struct eqint
 {
@@ -73,121 +65,6 @@ string string_int_2_kmer(int kmer_code) {
 }
 
 
-
-
-
-short int * readBLOSUM(const char * blosum_file) {
-	
-	string line;
-	
-	int matrix_length = 256*256;
-	short int * matrix = new short int [matrix_length];
-	
-	for (int i = 0 ; i < matrix_length; i++) {
-		matrix[i] = SHRT_MAX;
-	}
-	
-	char * row = 0 ;
-	
-	ifstream myfile (blosum_file);
-	if (myfile.is_open())
-	{
-		while (! myfile.eof() )	{
-			char * pch;
-			getline (myfile,line, '\n');
-			
-			
-			//cout << line << endl;
-			
-			
-			
-			if (line.length() == 0) {
-				continue;
-			}
-			
-			if (line[0] == '#') {
-				continue;
-			}
-			
-			
-			char buf[1024];
-			strncpy(buf, line.c_str(), sizeof(buf) - 1);
-			buf[sizeof(buf) - 1] = '\0';
-			
-			if (line[0] == ' ') {
-				row = new char [256];
-				
-				pch = strtok (buf," ");
-				int i = 0;
-				while (pch != NULL)
-				{
-					//cout << i  << ": " <<  pch[0] << endl;
-					char c = pch[0];
-					
-					//if (c<0 || c > 256) {
-					if (c<0) {
-						cerr << "c invalid" << endl;
-						exit(EXIT_FAILURE);
-					}
-					
-					row[i]=c;
-					//printf ("%s\n",pch);
-					pch = strtok (NULL, " ");
-					i++;
-				}
-				
-				
-				continue;
-			}
-			
-			if (row == 0) {
-				cerr << "row=0" << endl;
-				exit(EXIT_FAILURE);
-			}
-			
-			// normal rows:
-			pch = strtok (buf," ");
-			
-			char c = pch[0];
-			
-			//if (c<0 || c > 256) {
-			if (c<0) {
-				cerr << "c invalid" << endl;
-				exit(EXIT_FAILURE);
-			}
-			
-			pch = strtok (NULL, " ");
-			
-			int i = 0;
-			while (pch != NULL) {
-				string score_str(pch);
-				short int score_int = (short int) str2int(score_str);
-				
-				//cout << c << "," << row[i] << ": " << score_int << endl;
-				matrix[c+256*row[i]]=score_int;
-				matrix[c+32+256*row[i]]=score_int;
-				matrix[c+256*(row[i]+32)]=score_int;
-				matrix[c+32+256*(row[i]+32)]=score_int;
-				pch = strtok (NULL, " ");
-				i++;
-			}
-			
-			
-			
-		}
-		
-		myfile.close();
-		
-		if (row != 0) delete [] row;
-		
-	}
-	else {
-		cerr << "Error: Unable to open file " << blosum_file << endl;
-		exit(1);
-	}
-	
-	return matrix;
-}
 
 
 
@@ -843,7 +720,7 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 	
 	int currentWinLen = 0;
 	int windowScore = 0;
-	int index;
+	
 	
 	int start_i = i;
 	int end_i = i+overlap_length;
@@ -856,25 +733,24 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 		
 		
 #ifdef DEBUG
+		//int index;
+		char a_char;
+		char b_char;
 		try {
-		index = a->at(i)+256 * b->at(j);
+				
+			a_char = a->at(i);
+			b_char = b->at(j);
 		} catch (out_of_range& oor) {
 			cerr << "Out of Range error:(index = a->at(i)+256 * b->at(j)) " << oor.what() << endl;
 			exit(1);
 		}
-		if (index >= 256*256) {
-			cerr << "A) index >= 256*256: " << index << endl;
-			exit(1);
-		}
-		if (index < 0) {
-			cerr << "A) index < 0: " << index << endl;
-			exit(1);
-		}
+		
+		aa_score = getScoreSave(a_char, b_char, score_matrix );
 #else
-		index = (*a)[i]+256*(*b)[j];
+		aa_score = getScore((*a)[i],(*b)[j], score_matrix );
 #endif	
 		
-		aa_score = score_matrix[index];
+		//aa_score = score_matrix[index];
 		
 		total_score += aa_score;
 		windowScore += aa_score;
@@ -886,8 +762,11 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 			
 			//remove first aa score, of aa that has left window
 			#ifdef DEBUG
+			char a_char;
+			char b_char;
 			try {
-			index = a->at(i-windowLength)+256 * b->at(j-windowLength);
+				a_char = a->at(i-windowLength);
+				b_char = b->at(j-windowLength);
 			} catch (out_of_range& oor) {
 				cerr << "Out of Range error:(index = a->at(i-windowLength)+256 * b->at(j-windowLength)) " << oor.what() << endl;
 				exit(1);
@@ -901,11 +780,12 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 				cerr << "B) index < 0: " << index << endl;
 				exit(1);
 			}
+			aa_score = getScoreSave(a_char, b_char, score_matrix );
 			#else
-			index = (*a)[i-windowLength]+256*(*b)[j-windowLength];
+			aa_score = getScore( (*a)[i-windowLength], (*b)[j-windowLength], score_matrix );
 			#endif
 			
-			aa_score = score_matrix[index];
+			
 			windowScore -= aa_score;
 			
 			

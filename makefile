@@ -30,7 +30,7 @@ else
 override LIBS += -lboost_iostreams-mt -lboost_system-mt -lboost_program_options-mt
 endif
 
-SOURCES=main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp
+SOURCES=main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp read_blosum.cpp basic_tools.cpp
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=clustgun
 

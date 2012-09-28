@@ -33,6 +33,7 @@
 #include "kmer_iterator.hpp"
 #include "fasta_parser.hpp"
 #include "binarypath.hpp"
+#include "read_blosum.hpp"
 
 
 //#include <iomanip>
@@ -135,20 +136,6 @@ public:
 	
 };
 
-template <class T1, class T2, class T3>
-class triplet {
-public:
-	T1 first;
-	T2 second;
-	T3 third;
-	
-	triplet(T1 a, T2 b, T3 c) {
-		first = a;
-		second = b;
-		third = c;
-	}
-};
-
 
 template <typename T>
 string NumberToString ( T Number )
@@ -165,23 +152,9 @@ bool fexists(string filename)
 	return ifile;
 }
 
-struct delete_object
-{
-	template <typename T>
-	void operator()(T *ptr){ delete ptr;}
-};
 
 
-template <class T>
-void DeleteContainerWithPointers (T * container) {
-	
-	
-    if (container == 0) return;
-	for_each( container->begin(), container->end(), delete_object() );
-	delete container;
-	
-	return;
-}
+
 
 
 template <class T>
