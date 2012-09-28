@@ -2520,7 +2520,7 @@ void Clustgun::cluster(string inputfile) {
 
 void usage(boost::program_options::options_description& options) {
 	cerr << endl;
-	cerr << "Usage: clustgun [--option] input.fas" << endl;
+	cerr << "Usage: clustgun [--option] input.faa" << endl;
 	cerr << endl;
 	cerr << options << endl;
 	cerr << endl;

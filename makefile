@@ -4,10 +4,6 @@ UNAME := $(shell uname)
 
 CXX=g++
 
-# gwich gcc version
-GCC_MAJOR    := $(shell $(CXX) -dumpversion 2>&1 | cut -d'.' -f1)
-GCC_MINOR    := $(shell $(CXX) -dumpversion 2>&1 | cut -d'.' -f2)
-
 # test for >= 4.3
 GCCVERSIONGTEQ43 := $(shell expr `gcc -dumpversion | cut -f1,2 -d.` \> 4.3)
 

@@ -29,13 +29,27 @@ download:
 > cd clustgun
 
 compile clustgun:
-if you installed the libraries as above:
+if you installed the libraries as above with --prefix:
 > make PREFIX=${HOME}
+
 if your libraries are installed in systems default locations
 > make
+
 if your libraries are somewhere else:
 > make INCLUDES='-I${HOME}/local/include' LFLAGS='-L${HOME}/local/lib ' LDFLAGS='-Wl,-R ${HOME}/local/lib'
-and optionally you may want use macros like these:
+alternatively, if you need to compile more often, you may want to set the following environment variables within your .bashrc:
+----------------------
+CPLUS_INCLUDE_PATH=${HOME}/local/include/:$CPLUS_INCLUDE_PATH
+export CPLUS_INCLUDE_PATH
+
+LIBRARY_PATH=${HOME}/local/lib/:$LIBRARY_PATH
+export LIBRARY_PATH
+
+LD_LIBRARY_PATH=${HOME}/local/lib/:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH
+----------------------
+
+and optionally you may want to use macros like these:
 > make CFLAGS='-DEBUG -DTIME'
 
 

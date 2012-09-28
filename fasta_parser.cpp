@@ -55,6 +55,23 @@ FASTA_Parser::FASTA_Parser(string file, bool getOnlyIdentfier, string * zcat_bin
 	
 }
 
+FASTA_Parser::FASTA_Parser(string file, bool getOnlyIdentfier, bool use_zcat) {
+	
+	#ifdef __APPLE__
+		string * zcat_bin = new string("/usr/bin/gzcat"); 
+	#else
+		string * zcat_bin = new string("/bin/zcat"); 
+	#endif
+
+	string zcat_command = *zcat_bin;
+	zcat_command.append(" -f ");
+	zcat_command.append(file);
+	
+	this->start(zcat_command, getOnlyIdentfier);
+	
+	delete zcat_bin;
+}
+
 void FASTA_Parser::start(string command, bool getOnlyIdentfier) {
 	
 	this->getOnlyIdentfier=getOnlyIdentfier;
@@ -78,7 +95,8 @@ void FASTA_Parser::start(string command, bool getOnlyIdentfier) {
 	fpstream = new io::stream_buffer<io::file_descriptor_source>(fileno(fp), flags);
 	
 	rna_stream = new std::istream(fpstream);
-	
+	//rna_stream = std::ifstream(fpstream);
+	//rna_stream.open(fpstream, ifstream::in);
 	
 	string line;
 	
@@ -118,7 +136,11 @@ void FASTA_Parser::start(string command, bool getOnlyIdentfier) {
 
 bool FASTA_Parser::getNextDescriptionLine(string& descr) {
 	//cerr << "getNextDescriptionLine" << endl;
-	if ( *rna_stream == false ) {
+	//if ( *rna_stream == false ) {
+	//std::istream & rna_stream_ref = *rna_stream;
+	sequence = 0;
+	
+	if ( rna_stream->fail() ) {
 		return false;
 	}
 	
@@ -126,7 +148,7 @@ bool FASTA_Parser::getNextDescriptionLine(string& descr) {
 	if (have_read_descr == true) {
 		bool found_descr=false;
 		string line;
-		while (*rna_stream) {
+		while (not rna_stream->fail()) {
 			
 			std::getline(*rna_stream, line);
 			//cerr << "x:" << line << endl;
@@ -143,7 +165,7 @@ bool FASTA_Parser::getNextDescriptionLine(string& descr) {
 			if (line[0] == '>' ) {
 				found_descr=true;
 				//exit(1);
-				this->description_line = getFASTADescription(line);
+				//this->description_line = getFASTADescription(line);
 				if (getOnlyIdentfier) {
 					this->description_line = getFASTADescription(line);
 				} else {
@@ -157,11 +179,11 @@ bool FASTA_Parser::getNextDescriptionLine(string& descr) {
 			return false;
 		}
 		
-		
 	}
 	
-	have_read_descr = true;
 	descr = this->description_line;
+	have_read_descr = true;
+	
 	return true;
 }
 
@@ -172,18 +194,27 @@ string * FASTA_Parser::getSequence() {
 	string line;
 	
 	
+	if (sequence != 0) {
+		cerr << "error: sequence has already been read via getSequence()" << endl;
+		exit(1);
+	}
 	
-	string * rna_sequence = new string();
+	sequence = new string();
 	
 	if (expected_sequence_length > 0) {
-		rna_sequence->reserve(expected_sequence_length);
+		sequence->reserve(expected_sequence_length);
 	}
 	
 	//cerr << "getSequence" << endl;
 	
 	//cout <<"line: "<< line << endl;
-	while (*rna_stream) {
+	while (true) {
 		std::getline(*rna_stream, line);
+		if (rna_stream->fail()) {
+			break;
+		}
+		//cout << "fail: " << rna_stream->fail() << endl;
+		
 		//cerr << "y:" << line << endl;
 		if (line.length() == 0) {
 			continue;
@@ -195,22 +226,23 @@ string * FASTA_Parser::getSequence() {
 		
 		if (line[0] == '>' ) {
 			
-			this->description_line = getFASTADescription(line);
+			//this->description_line = getFASTADescription(line);
 			if (getOnlyIdentfier) {
 				this->description_line = getFASTADescription(line);
 			} else {
 				this->description_line = line;
 			}
 			have_read_descr = false;
-			rna_sequence->reserve(rna_sequence->length());
-			return rna_sequence;
+			sequence->reserve(sequence->length());
+			return sequence;
 		} else {
 			int lastpos = line.length()-1;
 			if (line[lastpos] == '\n') {
 				line.erase(lastpos); // remove trailing newline
 			}
-			//rna_sequence->append("@");
-			rna_sequence->append(line);
+			//sequence->append("@");
+			//cout << "append" << endl;
+			sequence->append(line);
 		}
 	}
 	
@@ -219,7 +251,7 @@ string * FASTA_Parser::getSequence() {
 		pclose(fp);
 		fp = 0;
 	}
-	rna_sequence->reserve(rna_sequence->length());
-	return rna_sequence;
+	sequence->reserve(sequence->length());
+	return sequence;
 	
 }
