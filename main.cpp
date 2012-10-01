@@ -702,12 +702,11 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 	}
 	
 	
-	int min_required_length = (int) ((double)min(a_len, b_len)*(double)min_overlap_fraction);
-	
-	if (overlap_length < min_required_length) {
+	//int min_required_length = (int) ((double)min(a_len, b_len)*(double)min_overlap_fraction);
+	//if (overlap_length < min_required_length) {
 		//cout << "failed ==============================" << endl;
-		return false;
-	}
+	//	return false;
+	//}
 	
 	
 	
