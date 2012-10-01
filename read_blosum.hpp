@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string>
 #include <iostream>
+#include <climits>
 
 #include "basic_tools.hpp"
 
