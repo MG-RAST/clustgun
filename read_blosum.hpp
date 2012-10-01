@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <string>
+#include <cstring>
 #include <iostream>
 #include <climits>
 
