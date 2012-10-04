@@ -15,6 +15,6 @@ using namespace std;
 
 short int * readBLOSUM(const char * blosum_file);
 short int getScore(char a, char b, short int * blosum_matrix);
-
+short int getScoreSave(char a, char b, short int * blosum_matrix);
 
 #endif
