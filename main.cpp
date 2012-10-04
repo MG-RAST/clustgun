@@ -771,14 +771,14 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 				exit(1);
 			}
 			
-			if (index >= 256*256) {
-				cerr << "B) index >= 256*256: " << index << endl;
-				exit(1);
-			}
-			if (index < 0) {
-				cerr << "B) index < 0: " << index << endl;
-				exit(1);
-			}
+			//if (index >= 256*256) {
+			//	cerr << "B) index >= 256*256: " << index << endl;
+		//		exit(1);
+			//}
+			//if (index < 0) {
+			//	cerr << "B) index < 0: " << index << endl;
+			//	exit(1);
+			//}
 			aa_score = getScoreSave(a_char, b_char, score_matrix );
 			#else
 			aa_score = getScore( (*a)[i-windowLength], (*b)[j-windowLength], score_matrix );
