@@ -2437,15 +2437,18 @@ int main(int argc, const char * argv[])	{
 	po::options_description options_visible("Options");
 	options_visible.add_options()
 		
-		("sort",							"sort input sequences by length (slow!)")
+		("sort",										"sort input sequences by length (slow!)")
 		
-		("kmernum",	po::value< int >(),		kmernum_help.c_str()) //"minimum number of k-mers required"
-		("blosum",	po::value< string >(),	blosum_help.c_str())
-		("output",	po::value< string >(),	"output file")
-		("avgcov",							"show average coverage")
-		("name",	po::value< string >(),	name_help.c_str())
-		("list",							"list all members and their offsets of a cluster")
-		("help",							"display this information");
+		("kmernum",				po::value< int >(),		kmernum_help.c_str()) //"minimum number of k-mers required"
+		("min_overlap_length",	po::value< int >(),		"")
+		("avgScoreThreshold",	po::value< int >(),		"")
+		("blosum",				po::value< string >(),	blosum_help.c_str())
+	
+		("output",				po::value< string >(),	"output file")
+		("avgcov",										"show average coverage")
+		("name",				po::value< string >(),	name_help.c_str())
+		("list",										"list all members and their offsets of a cluster")
+		("help",										"display this information");
 	
 	po::options_description options_hidden("Hidden");
 	options_hidden.add_options()
@@ -2530,6 +2533,22 @@ int main(int argc, const char * argv[])	{
 	
 	if (vm.count("blosum")) {
 		blosum_file=vm["output"].as< string >();
+	}
+
+	if (vm.count("min_overlap_length")) {
+		min_overlap_length = vm["min_overlap_length"].as< int >();
+		if (min_overlap_length < 1) {
+			cerr << "error: parameter does make no sense" << endl;
+			exit(1);
+		}
+	}
+
+	if (vm.count("avgScoreThreshold")) {
+		avgScoreThreshold = vm["avgScoreThreshold"].as< int >();
+		if (avgScoreThreshold < 0) {
+			cerr << "error: parameter does make no sense" << endl;
+			exit(1);
+		}
 	}
 	
 	if (vm.count("list")) {

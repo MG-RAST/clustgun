@@ -87,11 +87,11 @@ int cluster_kmer_overlap_threshold = 5;// 7
 
 
 // overlap verification:
-const int min_overlap_length = 10;
-const double min_overlap_fraction  = 0.2; // an overlap length of 20% of the length of the shorter sequence is required
+int min_overlap_length = 10;
+//const double min_overlap_fraction  = 0.2; // an overlap length of 20% of the length of the shorter sequence is required
 const int windowLength = 10; // length of sliding window
 const int windowScoreThreshold = 0; // total BLOSUM score required for each window
-const int avgScoreThreshold = 3; // average BLOSUM score required for an overlap
+int avgScoreThreshold = 3; // average BLOSUM score required for an overlap
 string blosum_file = "BLOSUM62";
 
 string prefixname = "cluster";
