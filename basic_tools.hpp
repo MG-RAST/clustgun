@@ -14,6 +14,8 @@
 
 using namespace std;
 
+std::string getFileExtension(const std::string& FileName);
+std::string getFileNameWithoutExtension(const std::string& FileName);
 
 void process_mem_usage(double& vm_usage, double& resident_set);
 

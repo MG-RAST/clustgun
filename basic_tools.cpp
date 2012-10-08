@@ -3,6 +3,39 @@
 #include "basic_tools.hpp"
 
 
+std::string getFileExtension(const std::string& FileName) {
+	cout <<"Z:" <<FileName << endl;
+	size_t pos  = FileName.find_last_of(".");
+    if(pos != std::string::npos) {
+        return FileName.substr(pos+1);
+	}
+    return "";
+}
+
+
+std::string getFileNameWithoutExtension(const std::string& FileName) {
+	size_t start  = FileName.find_last_of("/");
+	
+    if(start == std::string::npos) {
+        start = 0;
+	} else {
+		start++;
+	}
+	
+	size_t end = FileName.find_last_of(".");
+	if(end != std::string::npos) {
+		if (end < start) {
+			end = std::string::npos;
+		}
+	}
+	
+	if(end == std::string::npos) {
+		return FileName.substr(start);
+	} 
+	
+    return FileName.substr(start, end-start);
+}
+
 
 void process_mem_usage(double& vm_usage, double& resident_set)
 {
@@ -11,7 +44,12 @@ void process_mem_usage(double& vm_usage, double& resident_set)
 	// double vm, rss;
 	// process_mem_usage(vm, rss);
 	// cout << "VM: " << vm << "; RSS: " << rss << endl;
-
+#ifdef __APPLE__
+	vm_usage     = 0;
+	resident_set = 0;
+	return;
+#endif
+	
 	using std::ios_base;
 	using std::ifstream;
 	using std::string;

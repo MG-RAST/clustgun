@@ -2167,6 +2167,7 @@ void Clustgun::cluster(string inputfile) {
 			}
 			
 			log_stream << endl;
+			flush(log_stream);
 		}
 		//if ((read_id >= limit_input_reads) && (limit_input_reads != -1)) {
 		//	break;
@@ -2187,7 +2188,7 @@ void Clustgun::cluster(string inputfile) {
 	}
 	double vm, rss;
 	process_mem_usage(vm, rss);
-	log_stream << "\t\t" << (int)vm << "\t" << (int)rss << endl;
+	log_stream << "-\t-\t" << (int)vm << "\t" << (int)rss << endl;
 	
 	
 	
@@ -2201,14 +2202,28 @@ void Clustgun::cluster(string inputfile) {
 	
 	if (this->outputfile.length() == 0) {
 		
-		size_t found  = inputfile.find_last_of('/');
-		if (found == string::npos) {
-			this->outputfile = string(inputfile)+string(".consensus");
+		string extension = getFileExtension(inputfile);
+		string fileNoExt =  getFileNameWithoutExtension(inputfile);
+		
+		this->outputfile = fileNoExt;
+		
+		if (extension.compare("faa")== 0 || extension.compare("fas")== 0 || extension.compare("fasta")== 0 || extension.compare("txt")== 0) {
 			
+			
+			this->outputfile.append(".clustgun");
+		
+		
+			this->outputfile.append(".");
+			this->outputfile.append(extension);
 		} else {
-			this->outputfile = inputfile.substr(found+1, inputfile.length());
-			this->outputfile.append(".consensus");
+			this->outputfile.append(".");
+			this->outputfile.append(extension);
+			this->outputfile.append(".clustgun");
 		}
+		
+		cout << this->outputfile << endl;
+		//exit(0);
+		
 		
 		//this->outputfile = string(inputfile)+string(".consensus");
 	}
@@ -2537,7 +2552,9 @@ int main(int argc, const char * argv[])	{
 		if (not vm.count("output") ) {
 			logfile = input_file;
 		}
-		logfile.append(".log");
+		string filename  = getFileNameWithoutExtension(logfile);
+		logfile = filename;
+		logfile.append(".clustgun.log");
 		
 		
 
