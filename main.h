@@ -45,11 +45,19 @@
 #include <boost/program_options/parsers.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include <boost/iostreams/tee.hpp>
+#include <boost/iostreams/stream.hpp>
 
 
 
 using namespace std;
 using google::sparse_hash_map; 
+
+namespace bio = boost::iostreams;
+using bio::tee_device;
+using bio::stream;
+
+
 
 #define GCC_VERSION (__GNUC__ * 10000 \
 	+ __GNUC_MINOR__ * 100 \
@@ -70,6 +78,12 @@ using  __gnu_cxx::hash;
 
 typedef short aminoacid;
 
+typedef tee_device<ostream, ofstream> TeeDevice;
+typedef stream<TeeDevice> TeeStream;
+
+//stream<tee_device<ostream, ofstream > > my_split;
+TeeStream  log_stream;
+
 template <class T1, class T2, class T3> class triplet;
 
 const int aminoacid_count = 21;
@@ -82,19 +96,18 @@ const int low_abundance_threshold=5; // for kmers in the whole set of reads
 
 
 // overlap detection:
-const int kmerlength = 5;
-int cluster_kmer_overlap_threshold = 5;// 7
+int kmerlength;
+int cluster_kmer_overlap_threshold;
 
 
 // overlap verification:
-int min_overlap_length = 10;
+int min_overlap_length;
 //const double min_overlap_fraction  = 0.2; // an overlap length of 20% of the length of the shorter sequence is required
 const int windowLength = 10; // length of sliding window
 const int windowScoreThreshold = 0; // total BLOSUM score required for each window
-int avgScoreThreshold = 3; // average BLOSUM score required for an overlap
-string blosum_file = "BLOSUM62";
-
-string prefixname = "cluster";
+int avgScoreThreshold; // average BLOSUM score required for an overlap
+string blosum_file;
+string prefixname;
 
 //const int limit_input_reads = -1; // -1
 //const int maxclustercount = 5000000;

@@ -488,7 +488,7 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 				cerr << "no" << endl;
 			}
 			for (int i = 0; i < (last_alignment_char+1); i++) {
-				cout << i << ": " << (*alignment_column)[i] << endl;
+				cerr << i << ": " << (*alignment_column)[i] << endl;
 			}
 			exit(1);
 			
@@ -890,11 +890,13 @@ void sortInputSequences(HashedArrayTree<pair<string *, string * > > * inputSeque
 void Clustgun::cluster(string inputfile) {
 
 
-		
+	//log_stream << "huhu" << endl;	
   
-	std::cout << "clustgun starts...\n";
+	log_stream<< "clustgun starts...\n";
 
-	if( system("date") ) {};
+	string date = exec("date");
+	log_stream << date << endl;
+	
 	
 	#ifdef TIME	
 	time_t begin, end; 
@@ -903,7 +905,7 @@ void Clustgun::cluster(string inputfile) {
 	
 	// create mappings of amino acid ASCII to int and back.
 	
-	cout << "initialize alphabet mapping... \"" << aminoacid_int2ASCII << "\""<< endl;
+	log_stream << "initialize alphabet mapping... \"" << aminoacid_int2ASCII << "\""<< endl;
 
 	// init with -1
 	std::fill_n(aminoacid_ASCII2int, 256, -1);
@@ -1271,7 +1273,14 @@ void Clustgun::cluster(string inputfile) {
 	// -------------------------------------------------------------------------
 	
 	//iterate through all reads to create clusters and match against existing clusters
-	cout << "read count vs cluster count" << endl;
+	log_stream << "#reads\t#clusters";
+	#ifdef TIME
+	log_stream << "\tseconds";
+	#endif
+	log_stream << "\tVM[kb]\tRSS[kb]";
+	
+	log_stream << endl;
+
 	
 	size_t sequence_count = inputSequences->size();
 	
@@ -2140,11 +2149,20 @@ void Clustgun::cluster(string inputfile) {
 			time(&end);
 			#endif		
 			
-			cout << read_id+1 << "\t" << stat_real_cluster_count 
+			log_stream << read_id+1 << "\t" << stat_real_cluster_count ;
 			#ifdef TIME
-			<< "\t" << difftime(end, begin)
-			#endif			
-			<< endl;
+			log_stream << "\t" << difftime(end, begin);
+			#endif
+			
+			if ((read_id +1) % 1000000 == 0 && read_id > 0) {
+				double vm, rss;
+				process_mem_usage(vm, rss);
+				log_stream << "\t" << vm << "\t" << rss;
+
+				 
+			}
+			
+			log_stream << endl;
 		}
 		//if ((read_id >= limit_input_reads) && (limit_input_reads != -1)) {
 		//	break;
@@ -2156,12 +2174,18 @@ void Clustgun::cluster(string inputfile) {
 		#ifdef TIME		
 		time(&end);
 		#endif	
-		cout << sequence_count << "\t" << stat_real_cluster_count 
+		log_stream << sequence_count << "\t" << stat_real_cluster_count ;
 		#ifdef TIME
-		<< "\t" << difftime(end, begin)
-		#endif			
-		<< endl;		
+		log_stream << "\t" << difftime(end, begin);
+		#endif
+		log_stream << endl;
+				
 	}
+	double vm, rss;
+	process_mem_usage(vm, rss);
+	log_stream << "\t\t" << vm << "\t" << rss << endl;
+	
+	
 	
 	delete fasta_parser;
 	//cout << "------------- "<< " X1 " << *(inputSequences->at(0).second) << endl;
@@ -2184,7 +2208,7 @@ void Clustgun::cluster(string inputfile) {
 		
 		//this->outputfile = string(inputfile)+string(".consensus");
 	}
-	cerr << " done. write results into output file \"" << outputfile << "\"... " << endl;
+	log_stream << " done. write results into output file \"" << outputfile << "\"... " << endl;
 
 	
 
@@ -2261,8 +2285,8 @@ void Clustgun::cluster(string inputfile) {
 			
 			output_stream << ">" << prefixname << current_cluster << " length=" << consensus->length() << " size=" << (*cluster_member_lists)[current_cluster]->getLength();
 			
-			if (avgcov) {
-				output_stream << " avgcov=";
+			if (true) {
+				output_stream << " cov=";
 				
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
 				mymemberlist->resetIterator();
@@ -2348,9 +2372,9 @@ void Clustgun::cluster(string inputfile) {
 	output_stream.close();
 	
 	
-	cerr << "file written..." << endl;
+	log_stream << "file written..." << endl;
 	
-	cerr << "clean memory..." << endl;
+	log_stream << "clean memory..." << endl;
 	
 	// --- CLEAN UP STUFF --- (only to make valgrind happy)
 	
@@ -2391,9 +2415,11 @@ void Clustgun::cluster(string inputfile) {
 	delete zcat_command;
 	delete aminoacid_occurence;
 	delete aminoacid_scores;
-	cerr << "cleaning done." << endl;	
-	if (system("date")) {};
-	cerr << "end" << endl;
+	log_stream << "cleaning done." << endl;	
+	
+	date = exec("date");
+	log_stream << date << endl;
+	log_stream << "end" << endl;
 	
 }
 
@@ -2417,39 +2443,38 @@ int main(int argc, const char * argv[])	{
 	
 	
 	
+       
+	
+
 	
 	// ----------------------------------
 	// define program options
 	namespace po = boost::program_options;
 	
-	string	kmernum_help = string("minimum number of k-mers required (default ");
-			kmernum_help.append(NumberToString(cluster_kmer_overlap_threshold));
-			kmernum_help.append(")");
+	
 	
 	string name_help = string("fasta description prefix name (default \"");
 			name_help.append(prefixname);
 			name_help.append("\")");
 	
-	string blosum_help = string("BLOSUM file (default: ");
-		blosum_help.append(blosum_file);
-		blosum_help.append(")");
+	
 	
 	po::options_description options_visible("Options");
 	options_visible.add_options()
 		
 		("sort",										"sort input sequences by length (slow!)")
 		
-		("kmernum",				po::value< int >(),		kmernum_help.c_str()) //"minimum number of k-mers required"
-		("min_overlap_length",	po::value< int >(),		"")
-		("avgScoreThreshold",	po::value< int >(),		"")
-		("blosum",				po::value< string >(),	blosum_help.c_str())
+		("kmernum",				po::value< int >(&cluster_kmer_overlap_threshold)->default_value(5),	"minimum number of k-mers required") 
+		("min_overlap_length",	po::value< int >(&min_overlap_length)->default_value(10),				"")
+		("kmerlength",			po::value< int >(&kmerlength)->default_value(5) ,						"")
+		("avgScoreThreshold",	po::value< int >(&avgScoreThreshold)->default_value(3),					"")
+		("blosum",				po::value< string >(&blosum_file)->default_value("BLOSUM62"),			"")
 	
-		("output",				po::value< string >(),	"output file")
-		("avgcov",										"show average coverage")
-		("name",				po::value< string >(),	name_help.c_str())
-		("list",										"list all members and their offsets of a cluster")
-		("help",										"display this information");
-	
+		("output",				po::value< string >(),													"output file")
+		("name",				po::value< string >(&prefixname)->default_value("cluster"),			"fasta description prefix name")
+		("list",																						"list all members and their offsets of a cluster")
+		("help",																						"display this information");
+	//string blosum_file = "BLOSUM62";
 	po::options_description options_hidden("Hidden");
 	options_hidden.add_options()
 	("input-file", po::value< vector<string> >(), 	"input file");
@@ -2475,6 +2500,10 @@ int main(int argc, const char * argv[])	{
 	// ----------------------------------
 	// evaluate program options
 	
+	string logfile;
+	if (vm.count("output")) {
+		logfile=vm["output"].as< string >();
+	} 
 	
 	if (vm.count("help")) {
 		usage(options_visible);
@@ -2501,7 +2530,13 @@ int main(int argc, const char * argv[])	{
 		//	cout << input_files_vec[i] << endl;
 		//}
 		
+		if (not vm.count("output") ) {
+			logfile = input_file;
+		}
+		logfile.append(".log");
 		
+		
+
 		
 	} else {
 		usage(options_visible);
@@ -2511,45 +2546,68 @@ int main(int argc, const char * argv[])	{
 	}
 
 	
+	ofstream ofs(logfile.c_str());
+	TeeDevice my_tee(cerr, ofs); 
+	log_stream.open(my_tee);
+	
+	log_stream << "clustgun started with these arguments:" << endl;
+	for (int i=0 ; i < argc-1 ; ++i) {
+		log_stream << argv[i] << " ";
+	}
+	log_stream << argv[argc -1] << endl;
 	
 	
-	//if (argc != 2) {
-	//	usage(options_visible);
-	//	exit(1);
-	//}
-	
-	
+	// print parameters:
+	std::map<std::string, boost::program_options::variable_value>::iterator vm_it;
+	for ( vm_it=vm.begin() ; vm_it != vm.end(); vm_it++ ) {
+		//log_stream << vm_it->second.value().type().name() << endl;
+		
+		// will not show array like --input
+		if (vm_it->second.value().type() == typeid(string) ) {
+			if ((*vm_it).second.as<string>().empty()) {
+				log_stream << (*vm_it).first << " => " << "false" << endl;
+			} else {
+				log_stream << (*vm_it).first << " => " << (*vm_it).second.as<string>() << endl;
+			}
+		} else if (vm_it->second.value().type() == typeid(int) ) {
+			log_stream << (*vm_it).first << " => " << (*vm_it).second.as<int>() << endl;
+		} else if (vm_it->second.value().type() == typeid(vector<string>))  {
+			log_stream << (*vm_it).first << " => " << (*vm_it).second.as<vector<string > >()[0] << endl;
+		} else   {
+			log_stream << "unknown parameter type" << endl;
+		}
+		//log_stream << (*vm_it).first << " => " << endl;
+		//log_stream << (*vm_it).second->as< string >() << endl;
+		//log_stream << (*vm_it).first << " => " << (*vm_it).second << endl;
+	}
+	log_stream << endl;
 	
 	
 	Clustgun my_pc = Clustgun();
 	
-	if (vm.count("name")) {
-		prefixname=vm["name"].as< string >();
-	}
+	
 	
 	if (vm.count("output")) {
 		my_pc.outputfile=vm["output"].as< string >();
 	}
 	
-	if (vm.count("blosum")) {
-		blosum_file=vm["output"].as< string >();
-	}
+	//if (vm.count("blosum")) {
+	//	blosum_file=vm["output"].as< string >();
+	//}
 
-	if (vm.count("min_overlap_length")) {
-		min_overlap_length = vm["min_overlap_length"].as< int >();
-		if (min_overlap_length < 1) {
-			cerr << "error: parameter does make no sense" << endl;
-			exit(1);
-		}
+	
+	if (min_overlap_length < 1) {
+		cerr << "error: parameter does make no sense" << endl;
+		exit(1);
 	}
+	
 
-	if (vm.count("avgScoreThreshold")) {
-		avgScoreThreshold = vm["avgScoreThreshold"].as< int >();
-		if (avgScoreThreshold < 0) {
-			cerr << "error: parameter does make no sense" << endl;
-			exit(1);
-		}
+	
+	if (avgScoreThreshold < 0) {
+		cerr << "error: parameter does make no sense" << endl;
+		exit(1);
 	}
+	
 	
 	if (vm.count("list")) {
 		my_pc.list_all_members = true;
@@ -2559,18 +2617,12 @@ int main(int argc, const char * argv[])	{
 		my_pc.sort_input_seq = true;
 	}
 	
-	if (vm.count("avgcov")) {
-		my_pc.avgcov = true;
-	}
 	
-	if (vm.count("kmernum")) {
-		
-		cluster_kmer_overlap_threshold = vm["kmernum"].as< int >();
-		
-		if (cluster_kmer_overlap_threshold < 1) {
-			cerr << "error: parameter does make no sense" << endl;
-			exit(1);
-		}
+	
+
+	if (cluster_kmer_overlap_threshold < 1) {
+		cerr << "error: parameter does make no sense" << endl;
+		exit(1);
 	}
 	
 	// ----------------------------------
@@ -2578,7 +2630,8 @@ int main(int argc, const char * argv[])	{
 	
 	my_pc.cluster(input_file);
 	
-	
+	log_stream.flush();
+    log_stream.close();
 		
 	return 0;
 }

@@ -8,14 +8,16 @@
 #include <sys/stat.h>
 #include <algorithm>
 #include <map>
-
+#include <unistd.h>
+#include<fstream>
 #include <cmath>
 
 using namespace std;
 
 
+void process_mem_usage(double& vm_usage, double& resident_set);
 
-
+std::string exec(const char* cmd);
 double round( double value );
 string stream2string(std::stringstream & stream);
 void checkFile(string * file);
