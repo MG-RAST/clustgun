@@ -1074,7 +1074,9 @@ void Clustgun::cluster(string inputfile) {
 			delete sequence;
 		}
 		
-		if (total_read_count % 100000 == 0) cerr << "total_read_count: " << total_read_count << endl;
+		if (total_read_count % 1000000 == 0) {
+			cerr << "total_read_count: " << total_read_count << endl;
+		}
 		//if (total_read_count >= limit_input_reads && limit_input_reads != -1) {
 		//	cerr << "WARNING: numer of reads for debugging purposes limited !!!!!!" << endl;
 		//	break;
@@ -2154,12 +2156,14 @@ void Clustgun::cluster(string inputfile) {
 			log_stream << "\t" << difftime(end, begin);
 			#endif
 			
-			if ((read_id +1) % 1000000 == 0 && read_id > 0) {
+			if ((read_id +1) % 500000 == 0 && read_id > 0) {
 				double vm, rss;
 				process_mem_usage(vm, rss);
-				log_stream << "\t" << vm << "\t" << rss;
+				log_stream << "\t" << (int)vm << "\t" << (int)rss;
 
 				 
+			} else {
+				log_stream << "\t-\t-";
 			}
 			
 			log_stream << endl;
@@ -2183,7 +2187,7 @@ void Clustgun::cluster(string inputfile) {
 	}
 	double vm, rss;
 	process_mem_usage(vm, rss);
-	log_stream << "\t\t" << vm << "\t" << rss << endl;
+	log_stream << "\t\t" << (int)vm << "\t" << (int)rss << endl;
 	
 	
 	
