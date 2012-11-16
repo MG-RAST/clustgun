@@ -7,7 +7,7 @@
 
 template <class T>
 class HashedArrayTree { //  powers of two 2^20=1048576
-private:
+protected:
 	vector<T * > *hash; // the inner vector will be fixed size, the outer flexibel
 	size_t arrayChunkSize; // choose something like 1MB
 	size_t two_power;
@@ -112,7 +112,7 @@ public:
 	void reserve (size_t x) {
 		
 		//size_t requested_array = (x >> two_power);
-//cout << "reserve" << endl;
+//cout << "reserve: req: "  << x << " avail: " << hash->size()*arrayChunkSize << endl;
 		while (hash->size()*arrayChunkSize < x) {
 			T * small_vec;
 			#ifdef DEBUG
@@ -130,7 +130,7 @@ public:
 					small_vec[i]=this->initialization_value;
 				}
 			}
-			//cout << "reserve push A " << small_vec << endl;
+	//cout << "reserve push A " << small_vec << endl;
 			#ifdef DEBUG
 			try {
 			#endif
@@ -246,6 +246,7 @@ public:
 			try {
 			#endif
 				small_vec = new T [arrayChunkSize];
+				//cout << "A create array of size " << 	arrayChunkSize	 << endl;
 			#ifdef DEBUG	
 			} catch (bad_alloc& ba) {
 				cerr << "error: (HAT) bad_alloc caught: " << ba.what() << endl;
@@ -280,6 +281,7 @@ public:
 				try {
 				#endif
 					small_vec = new T [arrayChunkSize];
+	//cout << "B create array of size " << 	arrayChunkSize	 << endl;				
 				#ifdef DEBUG	
 				} catch (bad_alloc& ba) {
 					cerr << "error: (HAT) bad_alloc caught: " << ba.what() << endl;
@@ -377,6 +379,91 @@ public:
 	
 };
 
+	
+class HashedArrayTreeString : public HashedArrayTree<char> {
+
+	
+	public: 
+		HashedArrayTreeString(size_t two_power) :  HashedArrayTree<char> (two_power) {
+			reserve(1);
+		};	
+	
+		char * addSequence(const char * seq, int seqlen) {
+			
+			if (seqlen+1 >= arrayChunkSize) {
+				cerr << "error: seqlen+1 >= arrayChunkSize" << endl;
+				cerr << " input sequence is bigger than internal arrays, please increase default array size" << endl;
+				exit(1);
+			}
+			#ifdef DEBUG
+			if (strlen(seq) != seqlen) {
+				cerr << "error: strlen(seq) != seqlen:  "<< strlen(seq) << " " << seqlen << endl;
+				exit(1);
+			}
+			#endif
+			if (nextFreePos+seqlen+1 >= arrayChunkSize) {
+				// go in next chunk, leave rest of current array empty...
+				//cout << endl << seq <<endl;
+				//cout << "nextFreePos: " << nextFreePos << endl;
+				//cout << "arrayChunkSize: " << arrayChunkSize << endl;
+				//cout << "seqlen: " << seqlen << endl;
+				//cout << "this->size(): " << this->size() << endl;
+				
+				reserve(hash->size()*arrayChunkSize + 1);
+				currentArray++;
+				nextFreePos = 0;
+			}
+			
+			char * small_vec = (*hash)[currentArray];
+			
+			char * buffer_start = &small_vec[nextFreePos];
+			
+			//memcpy(buffer_start, seq, seqlen)		
+			strcpy(buffer_start, seq);
+			
+			nextFreePos += seqlen+1;
+			
+			return buffer_start;
+			
+			
+		}
+	
+		char * addData(const char * seq, int datalen) {
+			
+			if (datalen >= arrayChunkSize) {
+				cerr << "error: seqlen+1 >= arrayChunkSize" << endl;
+				cerr << " input sequence is bigger than internal arrays, please increase default array size" << endl;
+				exit(1);
+			}
+	
+			if (nextFreePos+datalen >= arrayChunkSize) {
+				// go in next chunk, leave rest of current array empty...
+				//cout << endl << seq <<endl;
+				//cout << "nextFreePos: " << nextFreePos << endl;
+				//cout << "arrayChunkSize: " << arrayChunkSize << endl;
+				//cout << "seqlen: " << seqlen << endl;
+				//cout << "this->size(): " << this->size() << endl;
+				
+				reserve(hash->size()*arrayChunkSize + 1);
+				currentArray++;
+				nextFreePos = 0;
+			}
+			
+			char * small_vec = (*hash)[currentArray];
+			
+			char * buffer_start = &small_vec[nextFreePos];
+			
+			memcpy(buffer_start, seq, datalen); // datalen would include terminal \0	
+			// old: strcpy(buffer_start, seq);
+			
+			nextFreePos += datalen;
+			
+			return buffer_start;
+			
+			
+		}
+	
+};
 
 
 #endif

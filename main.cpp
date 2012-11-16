@@ -10,7 +10,34 @@
 #include "main.h"
 
 
+#ifdef TIME
+timespec diff(timespec start, timespec end)
+{
+	timespec temp;
+	if ((end.tv_nsec-start.tv_nsec)<0) {
+		temp.tv_sec = end.tv_sec-start.tv_sec-1;
+		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	} else {
+		temp.tv_sec = end.tv_sec-start.tv_sec;
+		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+	return temp;
+}
 
+timespec add_time(timespec time1, timespec time2) {
+	timespec result;
+	result.tv_sec = time1.tv_sec + time2.tv_sec ;
+    result.tv_nsec = time1.tv_nsec + time2.tv_nsec ;
+    if (result.tv_nsec >= 1000000000L) {		/* Carry? */
+        result.tv_sec++ ;  result.tv_nsec = result.tv_nsec - 1000000000L ;
+    }
+	
+    return (result) ;
+	
+}
+
+
+#endif
 
 
 struct eqint
@@ -68,14 +95,14 @@ string string_int_2_kmer(int kmer_code) {
 
 
 
-int getOffsets(string * sequence, vector<short> * vector_of_offsets, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint> &cluster_kmer_hash, int max_cluster) {
+int getOffsets(const char * sequence, int seq_len, vector<short> * vector_of_offsets, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint> &cluster_kmer_hash, int max_cluster) {
 	
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
 	KmerIterator * mykmerit;
 	#ifdef DEBUG
 	try {
 #endif
-		mykmerit = new KmerIterator(sequence,0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+		mykmerit = new KmerIterator(sequence, seq_len ,0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
 #ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (getOffsets) bad_alloc caught: " << ba.what() << endl;
@@ -147,7 +174,7 @@ bool sortbyPairSecond( const pair<int, short>& i, const pair<int, short>& j ) {
 
 	
 string * computeConsensus(cluster_member_list * mymemberlist,
-						  HashedArrayTree<pair<string *, string * > > * inputSequences,
+						  HashedArrayTree<pair<mystring, mystring > > * inputSequences,
 						  vector<char> * alignment_column,
 						  vector<bool> * aminoacid_occurence,
 						  vector<int> * aminoacid_scores,
@@ -247,14 +274,14 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 			#ifdef DEBUG
 			int member_length;
 			try {
-			 member_length = (inputSequences->at(sorted_members[member].first).second)->length();
+			 member_length = (inputSequences->at(sorted_members[member].first).second).length();
 			} catch (out_of_range& oor) {
 				cerr << "Out of Range error:(some_length) " << oor.what() << endl;
 				exit(1);
 			}
 			//if (sorted_members[member].second + some_length - 1 < current_ali_position ){
 			#else
-			int member_length = ((*inputSequences)[sorted_members[member].first].second)->length();
+			int member_length = ((*inputSequences)[sorted_members[member].first].second).length();
 			#endif
 			
 			if (last_alignment_char >= 100 ) {
@@ -276,14 +303,14 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 				#ifdef DEBUG
 				char aa;
 				try {
-				aa = (inputSequences->at(sorted_members[member].first).second)->at(current_ali_position-sorted_members[member].second);
+				aa = (inputSequences->at(sorted_members[member].first).second).at(current_ali_position-sorted_members[member].second);
 				} catch (out_of_range& oor)	{
 					cerr << "Out of Range error:(huhuhuh) " << oor.what() << endl;
 					exit(1);
 				}
 
 				#else
-				char aa = (*((*inputSequences)[sorted_members[member].first].second))[current_ali_position-sorted_members[member].second];
+				char aa = ((*inputSequences)[sorted_members[member].first].second)[current_ali_position-sorted_members[member].second];
 				#endif			
 				//cout << aa << endl;
 				
@@ -528,7 +555,7 @@ string * computeConsensus(cluster_member_list * mymemberlist,
 	return new_consensus_seq;
 }
 
-void addConsensusSequence(string * new_consensus_seq, int cluster, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>& cluster_kmer_hash) {
+void addConsensusSequence(const char * sequence, int seq_len, int cluster, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>& cluster_kmer_hash) {
 
 	
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
@@ -536,7 +563,7 @@ void addConsensusSequence(string * new_consensus_seq, int cluster, sparse_hash_m
 	#ifdef DEBUG
 	try {
 #endif
-		mykmer_insertion_it = new KmerIterator(new_consensus_seq, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+		mykmer_insertion_it = new KmerIterator(sequence, seq_len, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
 		#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (addConsensusSequence) bad_alloc caught: " << ba.what() << endl;
@@ -590,7 +617,7 @@ void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_m
 	#ifdef DEBUG
 	try {
 #endif
-		mykmer_deletion_it = new KmerIterator(consensus_old, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+		mykmer_deletion_it = new KmerIterator(consensus_old->c_str(), consensus_old->length(), 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
 		#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (removeConsensusSequence) bad_alloc caught: " << ba.what() << endl;
@@ -717,8 +744,8 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 	
 	int aa_score;
 	
-	int currentWinLen = 0;
-	int windowScore = 0;
+	//int currentWinLen = 0;
+	//int windowScore = 0;
 	
 	
 	int start_i = i;
@@ -752,50 +779,50 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 		//aa_score = score_matrix[index];
 		
 		total_score += aa_score;
-		windowScore += aa_score;
+		//windowScore += aa_score;
 		
-		if (currentWinLen < windowLength) {
-			//cout << "_windows score is : " << windowScore << endl;
-			currentWinLen++;
-		} else {
-			
-			//remove first aa score, of aa that has left window
-			#ifdef DEBUG
-			char a_char;
-			char b_char;
-			try {
-				a_char = a->at(i-windowLength);
-				b_char = b->at(j-windowLength);
-			} catch (out_of_range& oor) {
-				cerr << "Out of Range error:(index = a->at(i-windowLength)+256 * b->at(j-windowLength)) " << oor.what() << endl;
-				exit(1);
-			}
-			
-			//if (index >= 256*256) {
-			//	cerr << "B) index >= 256*256: " << index << endl;
-		//		exit(1);
-			//}
-			//if (index < 0) {
-			//	cerr << "B) index < 0: " << index << endl;
-			//	exit(1);
-			//}
-			aa_score = getScoreSave(a_char, b_char, score_matrix );
-			#else
-			aa_score = getScore( (*a)[i-windowLength], (*b)[j-windowLength], score_matrix );
-			#endif
-			
-			
-			windowScore -= aa_score;
-			
-			
-			//cout << "windows score is : " << windowScore << endl;
-			if (windowScore < windowScoreThreshold) {
-				//cerr << "windowScore is too small" << endl;
-				return false;
-				//exit(1);
-				
-			}
-		}
+//		if (currentWinLen < windowLength) {
+//			//cout << "_windows score is : " << windowScore << endl;
+//			currentWinLen++;
+//		} else {
+//			
+//			//remove first aa score, of aa that has left window
+//			#ifdef DEBUG
+//			char a_char;
+//			char b_char;
+//			try {
+//				a_char = a->at(i-windowLength);
+//				b_char = b->at(j-windowLength);
+//			} catch (out_of_range& oor) {
+//				cerr << "Out of Range error:(index = a->at(i-windowLength)+256 * b->at(j-windowLength)) " << oor.what() << endl;
+//				exit(1);
+//			}
+//			
+//			//if (index >= 256*256) {
+//			//	cerr << "B) index >= 256*256: " << index << endl;
+//		//		exit(1);
+//			//}
+//			//if (index < 0) {
+//			//	cerr << "B) index < 0: " << index << endl;
+//			//	exit(1);
+//			//}
+//			aa_score = getScoreSave(a_char, b_char, score_matrix );
+//			#else
+//			aa_score = getScore( (*a)[i-windowLength], (*b)[j-windowLength], score_matrix );
+//			#endif
+//			
+//			
+//			windowScore -= aa_score;
+//			
+//			
+//			//cout << "windows score is : " << windowScore << endl;
+//			if (windowScore < windowScoreThreshold) {
+//				//cerr << "windowScore is too small" << endl;
+//				return false;
+//				//exit(1);
+//				
+//			}
+//		}
 				
 				
 		
@@ -888,7 +915,7 @@ void sortInputSequences(HashedArrayTree<pair<string *, string * > > * inputSeque
 
 
 void Clustgun::cluster(string inputfile) {
-
+	double vm, rss;
 
 	//log_stream << "huhu" << endl;	
   
@@ -898,10 +925,26 @@ void Clustgun::cluster(string inputfile) {
 	log_stream << date << endl;
 	
 	
-	#ifdef TIME	
+	
+	
+	
 	time_t begin, end; 
 	time(&begin);
+	
+	#ifdef TIME
+	timespec kmersearch_total = {0, 0};
+	timespec kmersearch_start; 
+	timespec kmersearch_end; 
+	
+	timespec validation_total = {0, 0};
+	timespec validation_start;
+	timespec validation_end;
+	
+	timespec overlap_total = {0, 0};
+	timespec overlap_start;
+	timespec overlap_end;
 	#endif
+	
 	
 	// create mappings of amino acid ASCII to int and back.
 	
@@ -1018,15 +1061,19 @@ void Clustgun::cluster(string inputfile) {
 	
 	int total_read_count = 0;
 	string descr;
-	string * sequence;
+	string * fasta_sequence;
 
 	// ----------------------------------------
 	// read sequences into memory
-	HashedArrayTree<pair<string *, string * > > * inputSequences;
+	
+	HashedArrayTreeString * inputSequencesData = new HashedArrayTreeString(23); // 2^23 = 8MB chunks
+	
+	
+	HashedArrayTree<pair<mystring, mystring > > * inputSequences;
 	#ifdef DEBUG
 	try {
 	#endif
-		inputSequences = new HashedArrayTree<pair<string *, string * > >(20); // 20 for 2^20=1MB chunks
+		inputSequences = new HashedArrayTree<pair<mystring, mystring > >(20); // 20 for 2^20=1MB chunks
 		#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (inputSequences) bad_alloc caught: " << ba.what() << endl;
@@ -1043,24 +1090,42 @@ void Clustgun::cluster(string inputfile) {
 	while (fasta_parser->getNextDescriptionLine(descr)) {
 		
 		//cerr << "descr: " << descr<< endl;
-		sequence = fasta_parser->getSequence();
+		fasta_sequence = fasta_parser->getSequence();
 		//my_sequence = *sequence;
 		
 		
 		
-		if (descr.length() > 0 && sequence->length() >= minimal_input_sequence_length) {
+		if (descr.length() > 0 && fasta_sequence->length() >= minimal_input_sequence_length) {
 			//cout << "huhu: " << *sequence << endl;
+			
 			total_read_count++;
+			
+			
+			char * descr_pointer = inputSequencesData->addSequence(descr.c_str(), descr.length());
+			
+			char * seq_pointer = inputSequencesData->addSequence(fasta_sequence->c_str(), fasta_sequence->length());
+			
+			// idea:
+			// use HATSequence->addData to store concatenation of sequence and description
+			// point only to sequence
+			// I may store the length of the sequences in fixed length array afterwards.  Or better store length in first 1 or 2 bytes in front of sequence.
+			
+			
 			#ifdef DEBUG
 			try {
 			#endif
-				inputSequences->push_back(pair<string *, string * >(new string(descr), sequence));
+				
+				inputSequences->push_back(pair<mystring, mystring >(mystring(descr_pointer, descr.length()), mystring(seq_pointer, fasta_sequence->length())));
+				
 			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (inputSeuqences->push_back) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
 			#endif
+			
+			delete fasta_sequence;
+			
 			//cout << "pushed: " << inputSequences->size() << endl;	
 			//cout << *sequence << endl;
 			//exit(0);
@@ -1071,11 +1136,13 @@ void Clustgun::cluster(string inputfile) {
 			
 		} else {
 			cerr << "warning: sequence was not accepted..." << endl;
-			delete sequence;
+			delete fasta_sequence;
 		}
 		
 		if (total_read_count % 1000000 == 0) {
 			cerr << "total_read_count: " << total_read_count << endl;
+			
+			
 		}
 		//if (total_read_count >= limit_input_reads && limit_input_reads != -1) {
 		//	cerr << "WARNING: numer of reads for debugging purposes limited !!!!!!" << endl;
@@ -1083,6 +1150,8 @@ void Clustgun::cluster(string inputfile) {
 		//}
 	}
 	cerr << "total_read_count: " << total_read_count << endl;
+	
+
 	
 	//cout << "------------- " << *(inputSequences->at(0).second) << endl;
 // count k-mers:	
@@ -1105,9 +1174,9 @@ void Clustgun::cluster(string inputfile) {
 	
 	// SORT input sequences
 	
-	if (sort_input_seq) {
-		sortInputSequences(inputSequences);
-	}
+	//if (sort_input_seq) {
+	//	sortInputSequences(inputSequences);
+	//}
 	
 	
 	
@@ -1186,6 +1255,8 @@ void Clustgun::cluster(string inputfile) {
 	
 	// -------------------------------------------------------------------------
 	
+	
+		
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint> cluster_kmer_hash;
 	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
 	
@@ -1276,13 +1347,18 @@ void Clustgun::cluster(string inputfile) {
 	
 	//iterate through all reads to create clusters and match against existing clusters
 	log_stream << "#reads\t#clusters";
-	#ifdef TIME
+	
 	log_stream << "\tseconds";
-	#endif
+	
 	log_stream << "\tVM[kb]\tRSS[kb]";
 	
 	log_stream << endl;
 
+
+	
+	process_mem_usage(vm, rss);
+	log_stream << "0\t0\t0\t" << (int)vm << "\t" << (int)rss << endl;	
+	
 	
 	size_t sequence_count = inputSequences->size();
 	
@@ -1299,17 +1375,18 @@ void Clustgun::cluster(string inputfile) {
     int max_cluster_kmer_count_array[top_n_clusters];
     short max_cluster_offsets[top_n_clusters];
 
+	mystring * sequence = 0;
 	
 	for (size_t read_id = 0 ; read_id < sequence_count; read_id++){
 	
 		//cout << "read_id: " << read_id<< endl;
 	
-		sequence = (*inputSequences)[read_id].second;
+		sequence = &((*inputSequences)[read_id].second);
 		KmerIterator * mykmerit;
 	#ifdef DEBUG		
 		try {
 	#endif	
-			mykmerit = new KmerIterator(sequence, 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+			mykmerit = new KmerIterator(sequence->c_str(), sequence->length(), 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
 	#ifdef DEBUG
 		} catch (bad_alloc& ba) {
 			cerr << "error: (new KmerIterator) bad_alloc caught: " << ba.what() << endl;
@@ -1331,6 +1408,9 @@ void Clustgun::cluster(string inputfile) {
 
 		
 		// check if read has matches to known clusters, iterate through read kmers
+		#ifdef TIME
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &kmersearch_start);
+		#endif
 		while (mykmerit->nextKmer()) {
 			int code = mykmerit->code;
 			//int pos = mykmerit->kmer_start_pos;
@@ -1524,6 +1604,12 @@ void Clustgun::cluster(string inputfile) {
 			
 			
 		} // end while ( kmer iteration )
+		#ifdef TIME
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &kmersearch_end);
+		kmersearch_total = add_time( overlap_total, diff(kmersearch_start, kmersearch_end));
+		#endif
+		
+		
 		delete mykmerit; 	
 				
 //		if (read_id > 1791) {
@@ -1549,7 +1635,9 @@ void Clustgun::cluster(string inputfile) {
 		
 		//cout << max_cluster_id_array[0] << endl;
 		
-		
+		#ifdef TIME
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &validation_start);
+		#endif
 		int validated_overlaps=0;
 		
 		// validate overlaps
@@ -1561,7 +1649,7 @@ void Clustgun::cluster(string inputfile) {
 			if (false) {
 				cout << "yeah --------------------" << endl;
 				cout << "read: " << read_id << endl;
-				cout << "readseq: " << *sequence << endl;
+				cout << "readseq: " << sequence << endl;
 				//cout << "max_cluster: " << max_cluster << endl;
 				//cout << "max_cluster_kmer_count: " << max_cluster_kmer_count << endl;
 				
@@ -1590,7 +1678,8 @@ void Clustgun::cluster(string inputfile) {
 				}
 				
 				// store overlaps in vector_of_offsets
-				int number_of_overlapping_kmers_seen = getOffsets(sequence,
+				int number_of_overlapping_kmers_seen = getOffsets(sequence->c_str(),
+																  sequence->length(),
 																  vector_of_offsets,	// <-- output
 																  cluster_kmer_hash,
 																  max_cluster_id_array[cluster_it]);
@@ -1654,18 +1743,18 @@ void Clustgun::cluster(string inputfile) {
 						
 						#ifdef DEBUG
 						try {
-						consensus_seq = inputSequences->at(cluster_read).second;
+						consensus_seq = new string(inputSequences->at(cluster_read).second.c_str());
 						} catch (out_of_range& oor) {
 							cerr << "Out of Range error:(consensus_seq = inputSequences->at(cluster_read).second) " << oor.what() << endl;
 							exit(1);
 						}
 						#else
-						consensus_seq = (*inputSequences)[cluster_read].second;
+						consensus_seq = new string((*inputSequences)[cluster_read].second.c_str());
 						#endif
 					}
 					
-					
-					overlap_found = computeSequenceOverlap(majority_offset, consensus_seq, sequence, score_matrix, major.third);
+					string help_sequence = string(sequence->c_str());
+					overlap_found = computeSequenceOverlap(majority_offset, consensus_seq, &help_sequence, score_matrix, major.third);
 					
 				
 					//exit(1);
@@ -1699,12 +1788,19 @@ void Clustgun::cluster(string inputfile) {
 			
 		} // end if (max_cluster_id_array[0] >= 0)
 		
-		
+		#ifdef TIME
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &validation_end);
+		validation_total = add_time( validation_total, diff(validation_start, validation_end));
+		//cerr << validation_start << " " << validation_end << endl;
+		#endif
 		
 		
 		
 		// ************ process overlaps ************
 		//cout << "validated_overlaps"  << endl;
+		#ifdef TIME
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &overlap_start);
+		#endif
 		while (true) {
 			if (validated_overlaps == 0) {
 				
@@ -1758,7 +1854,7 @@ void Clustgun::cluster(string inputfile) {
 				
 				
 				
-				addConsensusSequence(sequence, last_cluster, cluster_kmer_hash);
+				addConsensusSequence(sequence->c_str(), sequence->length(), last_cluster, cluster_kmer_hash);
 				
 				break;
 				
@@ -1821,7 +1917,7 @@ void Clustgun::cluster(string inputfile) {
 						exit(1);
 					}
 					#else
-					consensus_old = (*inputSequences)[seed_id].second;
+					consensus_old = new string((*inputSequences)[seed_id].second.c_str());
 					#endif
 				}
 				
@@ -1839,7 +1935,7 @@ void Clustgun::cluster(string inputfile) {
 					exit(1);
 				}
 				#else
-				int member_len = (*inputSequences)[read_id].second->length();
+				int member_len = (*inputSequences)[read_id].second.length();
 				#endif					
 				//bool perfect_overlap = false;
 				if (max_cluster_offsets[0] >= 0 && max_cluster_offsets[0]+member_len <= consensus_old->length() ) { // check for full-length overlap
@@ -1917,7 +2013,7 @@ void Clustgun::cluster(string inputfile) {
 					
 					// insert kmers of new_consensus_seq into hash
 					
-					addConsensusSequence(new_consensus_seq, clusterhit, cluster_kmer_hash);
+					addConsensusSequence(new_consensus_seq->c_str(), new_consensus_seq->length(), clusterhit, cluster_kmer_hash);
 					
 					
 					
@@ -1953,11 +2049,12 @@ void Clustgun::cluster(string inputfile) {
 				
 				if (consensus_1 == NULL) {
 					int cluster_read = cluster_1_memberlist->start->data_array1[0];
-					#ifdef DEBUG
-					consensus_1 = inputSequences->at(cluster_read).second;
-					#else
-					consensus_1 = (*inputSequences)[cluster_read].second;
-					#endif
+//					#ifdef DEBUG
+//					consensus_1 = inputSequences->at(cluster_read).second;
+//					#else
+//					consensus_1 = (*inputSequences)[cluster_read].second;
+//					#endif
+					consensus_1 = new string((*inputSequences)[cluster_read].second.c_str());
 				}
 				
 				// Cluster 2
@@ -1968,11 +2065,12 @@ void Clustgun::cluster(string inputfile) {
 				
 				if (consensus_2 == NULL) {
 					int cluster_read = cluster_2_memberlist->start->data_array1[0];
-					#ifdef DEBUG
-					consensus_2 = inputSequences->at(cluster_read).second;
-					#else
-					consensus_2 = (*inputSequences)[cluster_read].second;
-					#endif
+//					#ifdef DEBUG
+//					consensus_2 = inputSequences->at(cluster_read).second;
+//					#else
+//					consensus_2 = (*inputSequences)[cluster_read].second;
+//					#endif
+					consensus_2 = new string((*inputSequences)[cluster_read].second.c_str());
 				}
 				
 				//cout << cluster_1 << endl;
@@ -1984,6 +2082,8 @@ void Clustgun::cluster(string inputfile) {
 				int offset_diff = max_cluster_offsets[previous_master_cluster_index] - max_cluster_offsets[second_cluster_index];
 				//cout << "seq: " << *sequence << endl;
 				//cout << "o: " << offset_diff << endl;
+				
+				
 				
 				bool has_overlap = computeSequenceOverlap(offset_diff, consensus_1, consensus_2, score_matrix, 0);
 				
@@ -2071,19 +2171,25 @@ void Clustgun::cluster(string inputfile) {
 					removeConsensusSequences(consensus_1, cluster_1, cluster_kmer_hash);
 					removeConsensusSequences(consensus_2, cluster_2, cluster_kmer_hash);
 					
-					if ( (*cluster_consensus_sequences)[ cluster_1] != NULL ) {
-						delete (*cluster_consensus_sequences)[ cluster_1];
-						(*cluster_consensus_sequences)[ cluster_1] = NULL;
-						
-					}
-					if ( (*cluster_consensus_sequences)[ cluster_2] != NULL ) {
-						delete (*cluster_consensus_sequences)[ cluster_2];
-						(*cluster_consensus_sequences)[ cluster_2] = NULL;
-						
-					}
 					
 					
 					
+//					if ( (*cluster_consensus_sequences)[ cluster_1] != NULL ) {
+//						delete (*cluster_consensus_sequences)[ cluster_1];
+//						(*cluster_consensus_sequences)[ cluster_1] = NULL;
+//						
+//					}
+//					if ( (*cluster_consensus_sequences)[ cluster_2] != NULL ) {
+//						delete (*cluster_consensus_sequences)[ cluster_2];
+//						(*cluster_consensus_sequences)[ cluster_2] = NULL;
+//						
+//					}
+					
+					// since both are copies, I can delete now both:
+					delete consensus_1;
+					delete consensus_2;
+					(*cluster_consensus_sequences)[ cluster_1] = NULL;
+					(*cluster_consensus_sequences)[ cluster_2] = NULL;
 					
 					// visualize cluster:
 					//master_cluster_member_list->resetIterator();
@@ -2123,7 +2229,7 @@ void Clustgun::cluster(string inputfile) {
 					
 					// insert kmers of new_consensus_seq into hash
 					
-					addConsensusSequence(new_consensus_seq, master_cluster, cluster_kmer_hash);
+					addConsensusSequence(new_consensus_seq->c_str(), new_consensus_seq->length(), master_cluster, cluster_kmer_hash);
 					
 					previous_master_cluster_index = master_cluster_index;
 					stat_real_cluster_count--;
@@ -2143,18 +2249,24 @@ void Clustgun::cluster(string inputfile) {
 			
 		  
 		} // end while true	
-			
+		
+		#ifdef TIME
+		//overlap_end=clock();
+		//overlap_total = overlap_end - overlap_start;
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &overlap_end);
+		overlap_total = add_time( overlap_total, diff(overlap_start, overlap_end));
+		#endif
 		
 		if ((read_id +1) % 10000 == 0 && read_id > 0) {
 			//cerr << "count: " << read_id << endl;
-			#ifdef TIME		
+				
 			time(&end);
-			#endif		
+					
 			
 			log_stream << read_id+1 << "\t" << stat_real_cluster_count ;
-			#ifdef TIME
+			
 			log_stream << "\t" << difftime(end, begin);
-			#endif
+			
 			
 			if ((read_id +1) % 500000 == 0 && read_id > 0) {
 				double vm, rss;
@@ -2176,19 +2288,19 @@ void Clustgun::cluster(string inputfile) {
 	
 	if (sequence_count % 10000 != 0 && sequence_count > 0) {
 		//cerr << "count: " << read_id << endl;
-		#ifdef TIME		
+				
 		time(&end);
-		#endif	
+		
 		log_stream << sequence_count << "\t" << stat_real_cluster_count ;
-		#ifdef TIME
+		
 		log_stream << "\t" << difftime(end, begin);
-		#endif
+		
 		log_stream << endl;
 				
 	}
-	double vm, rss;
+	//double vm, rss;
 	process_mem_usage(vm, rss);
-	log_stream << "-\t-\t" << (int)vm << "\t" << (int)rss << endl;
+	log_stream << "-\t-\t-\t" << (int)vm << "\t" << (int)rss << endl;
 	
 	
 	
@@ -2207,7 +2319,7 @@ void Clustgun::cluster(string inputfile) {
 		
 		this->outputfile = fileNoExt;
 		
-		if (extension.compare("faa")== 0 || extension.compare("fas")== 0 || extension.compare("fasta")== 0 || extension.compare("txt")== 0) {
+		if (extension.compare("faa")== 0 || extension.compare("fa")== 0 || extension.compare("fas")== 0 || extension.compare("fasta")== 0 || extension.compare("txt")== 0) {
 			
 			
 			this->outputfile.append(".clustgun");
@@ -2271,7 +2383,7 @@ void Clustgun::cluster(string inputfile) {
 				// cluster of size 1 !
 				
 				
-				consensus = (*inputSequences)[mymemberlist->start->data_array1[0]].second ;
+				consensus = new string((*inputSequences)[mymemberlist->start->data_array1[0]].second.c_str()) ;
 			}
 				
 			#ifdef DEBUG
@@ -2321,7 +2433,7 @@ void Clustgun::cluster(string inputfile) {
 					//	output_stream << " " ; 
 					//}
 					
-					tot_len += (*inputSequences)[seq_id].second->length();
+					tot_len += (*inputSequences)[seq_id].second.length();
 					
 				}
 				
@@ -2349,7 +2461,7 @@ void Clustgun::cluster(string inputfile) {
 						output_stream << " " ; 
 					}
 					
-					output_stream << "(" << offset << ")" << *((*inputSequences)[seq_id].first);
+					output_stream << "(" << offset << ")" << (*inputSequences)[seq_id].first.c_str();
 				}
 				
 				
@@ -2370,16 +2482,16 @@ void Clustgun::cluster(string inputfile) {
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
 				mymemberlist->resetIterator();
 				while(mymemberlist->nextElement()) {
-					string * tempseq = ((*inputSequences)[mymemberlist->getFirst()].second);
+					string * tempseq = new string(((*inputSequences)[mymemberlist->getFirst()].second).c_str());
 					cout << string(mymemberlist->getSecond()+20, '_') << *tempseq << endl;
+					delete tempseq;
 				}
 				cout << *consensus << endl;
 				//exit(0);
 			}
 			
-			
+			delete consensus;
 			if (not consensus_is_read) {
-				delete consensus;
 				(*cluster_consensus_sequences)[current_cluster] = NULL;
 			}
 			//cout << "> cluster" << current_cluster << endl;
@@ -2417,7 +2529,7 @@ void Clustgun::cluster(string inputfile) {
 	delete alignment_column;
 	//cout << "------------- "<< " X4 " << *(inputSequences->at(0).second) << endl;
 	//cout << inputSequences->name << endl;
-	inputSequences->deleteContentPairOfPointers();
+	//inputSequences->deleteContentPairOfPointers();
 	delete inputSequences;
 	
 	
@@ -2440,6 +2552,19 @@ void Clustgun::cluster(string inputfile) {
 	log_stream << date << endl;
 	log_stream << "end" << endl;
 	
+	time(&end);
+	log_stream << "total time in seconds: " << difftime(end, begin) << endl;
+	log_stream << "total time in hours: " << difftime(end, begin)/3600 << endl;
+	#ifdef TIME
+	log_stream << "total time for kmer-iteration: (seconds:nanoseconds) " << kmersearch_total.tv_sec << ":" << kmersearch_total.tv_nsec << endl;
+	log_stream << "total time for validation: (seconds:nanoseconds)     " << validation_total.tv_sec << ":" << validation_total.tv_nsec << endl;
+	log_stream << "total time for overlap: (seconds:nanoseconds)        " << overlap_total.tv_sec << ":" << overlap_total.tv_nsec << endl;
+
+	int totalclocks=clock();
+	log_stream << "total time for everything:     (clock ticks) " << totalclocks << " (seconds) " << (float) totalclocks/CLOCKS_PER_SEC << endl;
+	
+	//log_stream << "clock: " <<  clock() << " " << clock()/CLOCKS_PER_SEC<< endl;
+	#endif
 }
 
 void usage(boost::program_options::options_description& options) {
@@ -2481,19 +2606,21 @@ int main(int argc, const char * argv[])	{
 	po::options_description options_visible("Options");
 	options_visible.add_options()
 		
-		("sort",										"sort input sequences by length (slow!)")
+	//	("sort",										"sort input sequences by length (slow!)")
 		
 		("kmernum",				po::value< int >(&cluster_kmer_overlap_threshold)->default_value(5),	"minimum number of k-mers required") 
-		("min_overlap_length",	po::value< int >(&min_overlap_length)->default_value(10),				"")
-		("kmerlength",			po::value< int >(&kmerlength)->default_value(5) ,						"")
-		("avgScoreThreshold",	po::value< int >(&avgScoreThreshold)->default_value(3),					"")
+		("min_overlap_length",	po::value< int >(&min_overlap_length)->default_value(13),				"")
+		("kmerlength",			po::value< int >(&kmerlength)->default_value(5) ,						"recommended: 5-7")
+		("avgScoreThreshold",	po::value< double >(&avgScoreThreshold)->default_value(3),					"")
+		//("windowLength",		po::value< int >(&windowLength)->default_value(10),						"length of sliding window")
+		//("windowScoreThreshold",po::value< int >(&windowScoreThreshold)->default_value(0),				"min avg score in sliding window")
 		("blosum",				po::value< string >(&blosum_file)->default_value("BLOSUM62"),			"")
 	
 		("output",				po::value< string >(),													"output file")
-		("name",				po::value< string >(&prefixname)->default_value("cluster"),			"fasta description prefix name")
+		("name",				po::value< string >(&prefixname)->default_value("cluster"),				"fasta description prefix name")
 		("list",																						"list all members and their offsets of a cluster")
 		("help",																						"display this information");
-	//string blosum_file = "BLOSUM62";
+	
 	po::options_description options_hidden("Hidden");
 	options_hidden.add_options()
 	("input-file", po::value< vector<string> >(), 	"input file");
@@ -2550,11 +2677,13 @@ int main(int argc, const char * argv[])	{
 		//}
 		
 		if (not vm.count("output") ) {
-			logfile = input_file;
+			//logfile = input_file;
+			logfile = getFileNameWithoutExtension(input_file);
+			logfile.append(".clustgun.log");
+		} else {
+			logfile = getFileNameWithoutExtension(logfile);
+			logfile.append(".log");
 		}
-		string filename  = getFileNameWithoutExtension(logfile);
-		logfile = filename;
-		logfile.append(".clustgun.log");
 		
 		
 
@@ -2592,6 +2721,8 @@ int main(int argc, const char * argv[])	{
 			}
 		} else if (vm_it->second.value().type() == typeid(int) ) {
 			log_stream << (*vm_it).first << " => " << (*vm_it).second.as<int>() << endl;
+		} else if (vm_it->second.value().type() == typeid(double) ) {
+			log_stream << (*vm_it).first << " => " << (*vm_it).second.as<double>() << endl;
 		} else if (vm_it->second.value().type() == typeid(vector<string>))  {
 			log_stream << (*vm_it).first << " => " << (*vm_it).second.as<vector<string > >()[0] << endl;
 		} else   {

@@ -3,8 +3,10 @@
 #include "basic_tools.hpp"
 
 
+
+
 std::string getFileExtension(const std::string& FileName) {
-	cout <<"Z:" <<FileName << endl;
+	//cout <<"Z:" <<FileName << endl;
 	size_t pos  = FileName.find_last_of(".");
     if(pos != std::string::npos) {
         return FileName.substr(pos+1);

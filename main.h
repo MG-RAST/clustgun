@@ -36,10 +36,8 @@
 #include "read_blosum.hpp"
 
 
-//#include <iomanip>
-#ifdef TIME
+
 #include <time.h>
-#endif
 
 #include <boost/program_options/detail/config_file.hpp>
 #include <boost/program_options/parsers.hpp>
@@ -84,6 +82,13 @@ typedef stream<TeeDevice> TeeStream;
 //stream<tee_device<ostream, ofstream > > my_split;
 TeeStream  log_stream;
 
+
+template <class T>
+class mybasicstring;
+
+	typedef mybasicstring<char> mystring;
+
+
 template <class T1, class T2, class T3> class triplet;
 
 const int aminoacid_count = 21;
@@ -103,9 +108,9 @@ int cluster_kmer_overlap_threshold;
 // overlap verification:
 int min_overlap_length;
 //const double min_overlap_fraction  = 0.2; // an overlap length of 20% of the length of the shorter sequence is required
-const int windowLength = 10; // length of sliding window
-const int windowScoreThreshold = 0; // total BLOSUM score required for each window
-int avgScoreThreshold; // average BLOSUM score required for an overlap
+//int windowLength; // length of sliding window
+//int windowScoreThreshold; // total BLOSUM score required for each window
+double avgScoreThreshold; // average BLOSUM score required for an overlap
 string blosum_file;
 string prefixname;
 
@@ -167,6 +172,46 @@ bool fexists(string filename)
 
 
 
+
+template <class T>
+class mybasicstring {
+public:
+	mybasicstring(){
+		
+	}
+	
+	mybasicstring(char * seq, size_t seq_len){
+		this->data = seq;
+		this->data_len = seq_len;
+	}
+	
+	mybasicstring(basic_string<T> * str) {
+		this->data_len = str->length();
+		data = new T[this->data_len+1];
+		strcpy(data, str->c_str());
+		data[this->data_len] = '\0';
+	}
+	size_t length(){
+		return this->data_len;
+	}
+	const T * c_str() {
+		return data;
+	}
+	T& operator[] (size_t __pos)  {
+		return data[__pos];
+	}
+	T& at (size_t __pos)  {
+		if (__pos > data_len) {
+			cerr << "error: array out of bound, need to throw exeception.." << endl;
+			exit(1);
+		}
+		return data[__pos];
+	}
+	
+private:
+	T * data;
+	size_t data_len;
+};
 
 
 

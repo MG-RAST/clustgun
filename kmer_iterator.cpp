@@ -28,11 +28,10 @@ string string_int_2_kmer(int kmer_code, int kmerlength, const char * aminoacid_i
 
 
 
-KmerIterator::KmerIterator(string* seq, int startpos, int kmerlength, const char* aminoacid_int2ASCII, aminoacid* aminoacid_ASCII2int, int aminoacid_count){
+KmerIterator::KmerIterator(const char* seq, int seqlen, int startpos, int kmerlength, const char* aminoacid_int2ASCII, aminoacid* aminoacid_ASCII2int, int aminoacid_count){
 	
 	this->sequence = seq;
-	
-	
+	this->seqlen = seqlen;
 	
 	
 	this->kmer_start_pos = startpos-1;
@@ -41,7 +40,7 @@ KmerIterator::KmerIterator(string* seq, int startpos, int kmerlength, const char
 	this->aminoacid_ASCII2int = aminoacid_ASCII2int;
 	this->aminoacid_count = aminoacid_count;
 	
-	this->seqlen = sequence->length();
+	
 	this->code =0;
 	this->coded_length = 0;
 	
@@ -79,14 +78,15 @@ bool KmerIterator::nextKmer(){
 			//int aa = aminoacid_ASCII2int[(*sequence)[kmer_start_pos+kmerlength-1]];
 			
 	#ifdef DEBUG
-			char c = sequence->at(kmer_start_pos+kmerlength-1); // with boundary check on sequence
+			char c = sequence[kmer_start_pos+kmerlength-1]; 
 			if ((int)c < 0 ) { // that could happen if char is signed by default... I should check that...
 				cerr << "(int)c < 0" << endl;
 				exit(1);
 			}
 			int aa = aminoacid_ASCII2int[c]; 
 	#else
-			int aa = aminoacid_ASCII2int[(*sequence)[kmer_start_pos+kmerlength-1]];
+			//int aa = aminoacid_ASCII2int[(*sequence)[kmer_start_pos+kmerlength-1]];
+			int aa = aminoacid_ASCII2int[sequence[kmer_start_pos+kmerlength-1]];
 	#endif
 			
 			if (aa == -1) {
@@ -94,9 +94,9 @@ bool KmerIterator::nextKmer(){
 				//for (int i = 0; i < sequence->length(); ++i) {
 				//	cout << i << ": " << sequence->at(i) << " " << (int) (sequence->at(i)) << endl;
 				//}
-				if ((*sequence)[kmer_start_pos+kmerlength-1] != 'X') {
-					cerr << "warning A:  amino acid not accepted \"" << (*sequence)[kmer_start_pos+kmerlength-1] << "\" pos: " << kmer_start_pos+kmerlength-1 << endl;
-					cerr << "seq: " << *sequence << endl;
+				if (sequence[kmer_start_pos+kmerlength-1] != 'X') {
+					cerr << "warning A:  amino acid not accepted \"" << sequence[kmer_start_pos+kmerlength-1] << "\" pos: " << kmer_start_pos+kmerlength-1 << endl;
+					cerr << "seq: " << sequence << endl;
 				}
 				//std::exit(1);
 				// and set kmer_start_pos XXXXXXXXXXXXX
@@ -131,17 +131,14 @@ bool KmerIterator::nextKmer(){
 			
 			
 			
-			#ifdef DEBUG
-			int aa = aminoacid_ASCII2int[sequence->at(kmer_start_pos+coded_length)];
-			#else
-			int aa = aminoacid_ASCII2int[(*sequence)[kmer_start_pos+coded_length]];
-			#endif
+			
+			int aa = aminoacid_ASCII2int[sequence[kmer_start_pos+coded_length]];
 			
 			//cout << "aa: " << aa << endl;
 			if (aa == -1) {
-				if ((*sequence)[kmer_start_pos+coded_length] != 'X') {
-					cerr << "warning B: amino acid not accepted \"" << (*sequence)[kmer_start_pos+coded_length] << "\"" << endl;
-					cerr << "seq: " << *sequence << endl;
+				if (sequence[kmer_start_pos+coded_length] != 'X') {
+					cerr << "warning B: amino acid not accepted \"" << sequence[kmer_start_pos+coded_length] << "\"" << endl;
+					cerr << "seq: " << sequence << endl;
 				}
 				//exit(1);
 				// and set kmer_start_pos XXXXXXXXXXXXX
