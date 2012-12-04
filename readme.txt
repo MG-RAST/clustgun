@@ -21,7 +21,7 @@ If you have admin rights on your system, you won't need to use --prefix option.
 > tar xvfz boost_1_50_0.tar.gz
 > cd boost_1_50_0
 > ./bootstrap.sh --with-libraries=iostreams,program_options,system --prefix=$HOME
-> ./b2 install
+> ./b2 --layout=system install
 
 3) clustgun (https://github.com/MG-RAST/clustgun/)
 download:
@@ -32,10 +32,10 @@ compile clustgun:
 if you installed the libraries as above with --prefix:
 > make PREFIX=${HOME}
 
-if your libraries are installed in systems default locations
+or, if your libraries are installed in systems default locations
 > make
 
-if your libraries are somewhere else:
+or, if your libraries are somewhere else:
 > make INCLUDES='-I${HOME}/local/include' LFLAGS='-L${HOME}/local/lib ' LDFLAGS='-Wl,-R ${HOME}/local/lib'
 alternatively, if you need to compile more often, you may want to set the following environment variables within your .bashrc:
 ----------------------
@@ -49,13 +49,10 @@ LD_LIBRARY_PATH=${HOME}/local/lib/:$LD_LIBRARY_PATH
 export LD_LIBRARY_PATH
 ----------------------
 
-and optionally you may want to use macros like these:
+If the BOOST library is not found (although installed), check if the library file names are suffixed with "-mt" and change the makefile accordingly.
+
+only for developing purposes:
 > make CFLAGS='-DEBUG -DTIME'
-
-
-
-old:
-BOOSTLIB=$HOME/local ; g++ main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp -o clustgun -lboost_iostreams -lboost_system  -lboost_program_options -I$BOOSTLIB/include -L$BOOSTLIB/lib  -m64 -Wl,-R $BOOSTLIB/lib -O3 -DDEBUG -DTIME
 
 RUN
 ---

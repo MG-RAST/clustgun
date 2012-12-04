@@ -22,13 +22,10 @@ override CFLAGS += -O3 -m64
 override LDFLAGS +=
 
 
-ifeq ($(UNAME), Linux)
-# Linux
+
 override LIBS += -lboost_iostreams -lboost_system -lboost_program_options
-else
-# OSX, e.g. Darwin
-override LIBS += -lboost_iostreams-mt -lboost_system-mt -lboost_program_options-mt
-endif
+#override LIBS += -lboost_iostreams-mt -lboost_system-mt -lboost_program_options-mt
+
 
 SOURCES=main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp read_blosum.cpp basic_tools.cpp
 OBJECTS=$(SOURCES:.cpp=.o)
