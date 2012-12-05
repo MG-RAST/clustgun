@@ -1101,6 +1101,26 @@ void Clustgun::cluster(string inputfile) {
 			
 			total_read_count++;
 			
+			if (total_read_count < 10) {
+				
+				size_t found;
+				int dna_amount = 0;
+				found=fasta_sequence->find_first_of("ACGTNactgn");
+				while (found != string::npos)
+				{
+					dna_amount++;
+					found = fasta_sequence->find_first_of("ACGTNactgn",found+1);
+				}
+				
+				if (dna_amount > 0.9*(fasta_sequence->length()) ) {
+					
+					cerr << "sequence: " << *fasta_sequence << endl;
+					cerr << "#bases: " << dna_amount << " length: " << fasta_sequence->length() << endl;
+					
+					cerr << "error: this looks like DNA, clustgun can assemble only protein sequences" << endl;
+					exit(1);
+				}
+			}
 			
 			char * descr_pointer = inputSequencesData->addSequence(descr.c_str(), descr.length());
 			
