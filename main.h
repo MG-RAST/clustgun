@@ -118,7 +118,7 @@ string prefixname;
 //const int maxclustercount = 5000000;
 
 const int max_protein_length = 65000;
-const int minimal_input_sequence_length = 10;
+//const int minimal_input_sequence_length = 10;
 
 const int hat_increase_steps = 1048576;
 

@@ -1087,6 +1087,7 @@ void Clustgun::cluster(string inputfile) {
 	
 	fasta_parser = new FASTA_Parser(file, true, zcat_command);
 	//string my_sequence;
+	int ignore_short_seq = 0;
 	while (fasta_parser->getNextDescriptionLine(descr)) {
 		
 		//cerr << "descr: " << descr<< endl;
@@ -1095,7 +1096,7 @@ void Clustgun::cluster(string inputfile) {
 		
 		
 		
-		if (descr.length() > 0 && fasta_sequence->length() >= minimal_input_sequence_length) {
+		if (descr.length() > 0 && fasta_sequence->length() > min_overlap_length) { // won't make sense to keep sequences short as the min_overlap_length
 			//cout << "huhu: " << *sequence << endl;
 			
 			total_read_count++;
@@ -1131,24 +1132,28 @@ void Clustgun::cluster(string inputfile) {
 			//exit(0);
 							
 			   
-				
+			if (total_read_count % 1000000 == 0 ) {
+				cerr << "total_read_count: " << total_read_count << endl;
+			}
 						   
 			
 		} else {
-			cerr << "warning: sequence was not accepted..." << endl;
+			ignore_short_seq++;
+			//cerr << "warning: sequence was not accepted..." << endl;
 			delete fasta_sequence;
 		}
 		
-		if (total_read_count % 1000000 == 0) {
-			cerr << "total_read_count: " << total_read_count << endl;
-			
-			
-		}
+		
 		//if (total_read_count >= limit_input_reads && limit_input_reads != -1) {
 		//	cerr << "WARNING: numer of reads for debugging purposes limited !!!!!!" << endl;
 		//	break;
 		//}
 	}
+	
+	if (ignore_short_seq > 0 ) {
+		log_stream << "warning: ignored " << ignore_short_seq << " sequences, because they were shorter than the mininmal overlap length." << endl;
+	}
+	
 	cerr << "total_read_count: " << total_read_count << endl;
 	
 
@@ -2608,7 +2613,7 @@ int main(int argc, const char * argv[])	{
 		
 	//	("sort",										"sort input sequences by length (slow!)")
 		
-		("kmernum",				po::value< int >(&cluster_kmer_overlap_threshold)->default_value(5),	"minimum number of k-mers required") 
+		("kmernum",				po::value< int >(&cluster_kmer_overlap_threshold)->default_value(1),	"minimum number of k-mers required")
 		("min_overlap_length",	po::value< int >(&min_overlap_length)->default_value(13),				"")
 		("kmerlength",			po::value< int >(&kmerlength)->default_value(5) ,						"recommended: 5-7")
 		("avgScoreThreshold",	po::value< double >(&avgScoreThreshold)->default_value(3),					"")
@@ -2715,7 +2720,11 @@ int main(int argc, const char * argv[])	{
 		// will not show array like --input
 		if (vm_it->second.value().type() == typeid(string) ) {
 			if ((*vm_it).second.as<string>().empty()) {
-				log_stream << (*vm_it).first << " => " << "false" << endl;
+				if (vm.count((*vm_it).first) ) {
+					log_stream << (*vm_it).first << " => " << "true" << endl;
+				} else {
+					log_stream << (*vm_it).first << " => " << "false" << endl;
+				}
 			} else {
 				log_stream << (*vm_it).first << " => " << (*vm_it).second.as<string>() << endl;
 			}
