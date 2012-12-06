@@ -48,6 +48,8 @@ $(EXECUTABLE): git_ref.h $(OBJECTS)
 
 git_ref.h:
 	echo "#define GIT_REF \"`git rev-parse --verify --short HEAD 2>/dev/null || echo unknown`\"" > git_ref.h
+	echo "#define GIT_DATE \"`git show -s --format="%ci" HEAD 2>/dev/null || echo unknown`\"" >> git_ref.h
+
 
 
 #g++ -o clustgun main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp -lboost_iostreams-mt -lboost_system-mt  -lboost_program_options-mt -O3 -DDEBUG -DTIME

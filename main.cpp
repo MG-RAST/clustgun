@@ -2593,7 +2593,7 @@ void Clustgun::cluster(string inputfile) {
 }
 
 void usage(boost::program_options::options_description& options) {
-	cerr << endl << "clustgun (git version: " << GIT_REF << ")" << endl;
+	cerr << endl << "clustgun (git version: " << GIT_REF << " date: " << GIT_DATE << ")" << endl;
 	cerr << endl;
 	cerr << "Usage: clustgun [--option] input.faa" << endl;
 	cerr << endl;
