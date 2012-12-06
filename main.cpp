@@ -2593,6 +2593,7 @@ void Clustgun::cluster(string inputfile) {
 }
 
 void usage(boost::program_options::options_description& options) {
+	cerr << endl << "clustgun (git version: " << GIT_REF << ")" << endl;
 	cerr << endl;
 	cerr << "Usage: clustgun [--option] input.faa" << endl;
 	cerr << endl;
@@ -2612,7 +2613,7 @@ int main(int argc, const char * argv[])	{
 	
 	
 	
-       
+	
 	
 
 	
@@ -2724,6 +2725,8 @@ int main(int argc, const char * argv[])	{
 	ofstream ofs(logfile.c_str());
 	TeeDevice my_tee(cerr, ofs); 
 	log_stream.open(my_tee);
+	
+	log_stream << "clustgun git version: " << GIT_REF << endl;
 	
 	log_stream << "clustgun started with these arguments:" << endl;
 	for (int i=0 ; i < argc-1 ; ++i) {

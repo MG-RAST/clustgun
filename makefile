@@ -31,20 +31,23 @@ SOURCES=main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp read_blosum.c
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=clustgun
 
-
-
-all: $(SOURCES) $(EXECUTABLE)
+all:  $(SOURCES) $(EXECUTABLE) 
 
 clean :
-	rm -f $(EXECUTABLE) $(OBJECTS)
+	rm -f $(EXECUTABLE) $(OBJECTS) git_ref.h
 
 debug: CFLAGS += -DDEBUG
 debug: all
 	
-$(EXECUTABLE): $(OBJECTS) 
-	$(CXX) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) $(LFLAGS) $(LDFLAGS)
+$(EXECUTABLE): git_ref.h $(OBJECTS) 
+	$(CXX) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) git_ref.h $(LFLAGS) $(LDFLAGS)
+	rm -f git_ref.h
 
 .cpp.o:
 	$(CXX) -c $(CFLAGS) $(INCLUDES) $< -o $@  
+
+git_ref.h:
+	echo "#define GIT_REF \"`git rev-parse --verify --short HEAD 2>/dev/null || echo unknown`\"" > git_ref.h
+
 
 #g++ -o clustgun main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp -lboost_iostreams-mt -lboost_system-mt  -lboost_program_options-mt -O3 -DDEBUG -DTIME

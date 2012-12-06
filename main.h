@@ -46,6 +46,7 @@
 #include <boost/iostreams/tee.hpp>
 #include <boost/iostreams/stream.hpp>
 
+#include "git_ref.h"
 
 
 using namespace std;
