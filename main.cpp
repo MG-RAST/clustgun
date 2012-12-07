@@ -2366,7 +2366,9 @@ void Clustgun::cluster(string inputfile) {
 	}
 	log_stream << " done. write results into output file \"" << outputfile << "\"... " << endl;
 
-	
+	if (list_all_members) {
+		log_stream << " write member lists into list file \"" << listfile << "\"... " << endl;
+	}
 
 	
 	//if ((*cluster_consensus_sequences)[1] != NULL) {
@@ -2384,6 +2386,18 @@ void Clustgun::cluster(string inputfile) {
 		cerr << "error writing file " << outputfile << endl;
 		exit(1);
 	}
+	
+	ofstream list_stream;
+	if (list_all_members) {
+		list_stream.open(listfile.c_str());
+		if (! list_stream.is_open())
+		{
+			cerr << "error writing file " << listfile << endl;
+			exit(1);
+		}
+
+	}
+		
 	int totalclustercount = last_cluster+1;
 	//cout << "maxclustercount: " << maxclustercount << endl;
 	//cout << "------------- "<< " X2 " << *(inputSequences->at(0).second) << endl;
@@ -2470,8 +2484,12 @@ void Clustgun::cluster(string inputfile) {
 			}
 			
 			
+			output_stream << endl; // end of fasta description line
+			output_stream << *consensus << endl; // protein sequence
+			
+			
 			if (list_all_members) {
-				output_stream << " ";
+				list_stream << prefixname << current_cluster << " ";
 				
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
 				mymemberlist->resetIterator();
@@ -2483,20 +2501,14 @@ void Clustgun::cluster(string inputfile) {
 					if (start_loop) {
 						start_loop = false;
 					} else {
-						output_stream << " " ; 
+						list_stream << " " ;
 					}
 					
-					output_stream << "(" << offset << ")" << (*inputSequences)[seq_id].first.c_str();
+					list_stream << "(" << offset << ")" << (*inputSequences)[seq_id].first.c_str();
 				}
+				list_stream << endl;
 				
-				
-			} 
-			
-			output_stream << endl;
-			
-			output_stream << *consensus << endl;
-			
-			
+			}
 			
 			//if (current_cluster == 98240) {
 			//if(true){
@@ -2526,6 +2538,9 @@ void Clustgun::cluster(string inputfile) {
 	}
 	//cout << "------------- "<< " X3 " << *(inputSequences->at(0).second) << endl;
 	output_stream.close();
+	if (list_all_members) {
+		list_stream.close();
+	}
 	
 	
 	log_stream << "file written..." << endl;
@@ -2677,13 +2692,15 @@ int main(int argc, const char * argv[])	{
 		logfile=vm["output"].as< string >();
 	} 
 	
+	
 	if (vm.count("help")) {
 		usage(options_visible);
 		exit(0);
 	}
 	
 	string input_file;
-
+	string listfile;
+	
 	if (vm.count("input-file")) {
 	
 		
@@ -2705,10 +2722,14 @@ int main(int argc, const char * argv[])	{
 		if (not vm.count("output") ) {
 			//logfile = input_file;
 			logfile = getFileNameWithoutExtension(input_file);
+			listfile = string(logfile);
 			logfile.append(".clustgun.log");
+			listfile.append(".clustgun.list");
 		} else {
 			logfile = getFileNameWithoutExtension(logfile);
+			listfile = string(logfile);
 			logfile.append(".log");
+			listfile.append(".list");
 		}
 		
 		
@@ -2769,7 +2790,7 @@ int main(int argc, const char * argv[])	{
 	
 	Clustgun my_pc = Clustgun();
 	
-	
+	my_pc.listfile = string(listfile);
 	
 	if (vm.count("output")) {
 		my_pc.outputfile=vm["output"].as< string >();

@@ -143,6 +143,7 @@ public:
 	bool sort_input_seq;
 	bool avgcov;
 	string outputfile;
+	string listfile;
 	
 	Clustgun() {
 		list_all_members = false;
