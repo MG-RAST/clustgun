@@ -16,7 +16,7 @@ If you have admin rights on your system, you won't need to use --prefix option.
 > make install
 
 2) Boost C++ libraries (http://www.boost.org)
-(you might also be able to install it from your systems software repository, e.g. ubuntu:  "sudo apt-get install libboost-dev")
+(you might also be able to install it from your systems software repository, e.g. ubuntu:  "sudo apt-get install libboost-system-dev libboost-iostreams-dev libboost-program-options-dev")
 > wget http://sourceforge.net/projects/boost/files/boost/1.50.0/boost_1_50_0.tar.gz
 > tar xvfz boost_1_50_0.tar.gz
 > cd boost_1_50_0

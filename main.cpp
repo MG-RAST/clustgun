@@ -2747,7 +2747,8 @@ int main(int argc, const char * argv[])	{
 	TeeDevice my_tee(cerr, ofs); 
 	log_stream.open(my_tee);
 	
-	log_stream << "clustgun git version: " << GIT_REF << endl;
+	
+	log_stream << "clustgun (git version: " << GIT_REF << " date: " << GIT_DATE << ")" << endl;
 	
 	log_stream << "clustgun started with these arguments:" << endl;
 	for (int i=0 ; i < argc-1 ; ++i) {
