@@ -11,14 +11,26 @@
 #include <unistd.h>
 #include<fstream>
 #include <cmath>
+#include <time.h>
+
 
 using namespace std;
+
+
+
+
 
 std::string getFileExtension(const std::string& FileName);
 std::string getFileNameWithoutExtension(const std::string& FileName);
 
 void process_mem_usage(double& vm_usage, double& resident_set);
 
+
+timespec diff(timespec start, timespec end);
+timespec add_time(timespec time1, timespec time2);
+
+int msleep(unsigned long milisec);
+int nsleep(unsigned long nanosec);
 std::string exec(const char* cmd);
 double round( double value );
 string stream2string(std::stringstream & stream);
@@ -27,9 +39,23 @@ bool FileExists(const char * filename);
 int str2int(string& text);
 string int2str (int n);
 void reverseComplementDNA(string & sequence);
-
+int * get_nucleobase_ascii2num();
 
 //template <class T1, class T2, class T3> class triplet;
+
+inline int ipow(int base, int exp)
+{
+    int result = 1;
+    while (exp)
+    {
+        if (exp & 1)
+            result *= base;
+        exp >>= 1;
+        base *= base;
+    }
+	
+    return result;
+}
 
 template <class T1, class T2, class T3>
 class triplet {
@@ -59,7 +85,7 @@ void DeleteObject (T * myobject) {
 	delete myobject;
 	
 	return;
-};
+}
 
 
 struct delete_object
@@ -79,7 +105,7 @@ void DeleteContainerWithPointers (T * container) {
 	delete container;
 	
 	return;
-};
+}
 
 
 
@@ -108,7 +134,7 @@ void DeleteMapWithPointers (map< A, B> * my_map) {
 	delete my_map;
 	
 	return;
-};
+}
 
 template <class A, class B>
 void DeleteMapWithPointers (multimap< A, B> * my_map) {
@@ -119,7 +145,7 @@ void DeleteMapWithPointers (multimap< A, B> * my_map) {
 	delete my_map;
 	
 	return;
-};
+}
 
 
 template <class A, class B>
@@ -129,7 +155,7 @@ pair< typename map< A , B >::iterator , bool > mapInsert (map< A, B> * mymap, A 
 	ret = mymap->insert(pair<A,B>(a, b));
 		
 	return ret;
-};
+}
 
 
 //template <class A, class B>

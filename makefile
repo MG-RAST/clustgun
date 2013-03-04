@@ -4,6 +4,7 @@ UNAME := $(shell uname)
 
 CXX=g++
 
+
 # test for >= 4.3
 GCCVERSIONGTEQ43 := $(shell expr `gcc -dumpversion | cut -f1,2 -d.` \> 4.3)
 
@@ -17,9 +18,10 @@ override LFLAGS += -L${PREFIX}/local/lib
 override LDFLAGS += -Wl,-R ${PREFIX}/local/lib
 endif
 
-override CFLAGS += -O3 -m64
+#-O3
+override CFLAGS += -m64 -fopenmp -Wall
 # override directive allows me to append values to variables from makefile arguments without overwriting
-override LDFLAGS +=
+override LDFLAGS += -fopenmp
 
 
 
@@ -27,7 +29,9 @@ override LIBS += -lboost_iostreams -lboost_system -lboost_program_options
 #override LIBS += -lboost_iostreams-mt -lboost_system-mt -lboost_program_options-mt
 
 
-SOURCES=main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp read_blosum.cpp basic_tools.cpp
+#SOURCES=main.cpp kmer_iterator.cpp fasta_parser.cpp binarypath.cpp read_blosum.cpp basic_tools.cpp
+SOURCES=$(wildcard *.cpp)
+HEADER=$(wildcard *.hpp)
 OBJECTS=$(SOURCES:.cpp=.o)
 EXECUTABLE=clustgun
 
@@ -39,11 +43,11 @@ clean :
 debug: CFLAGS += -DDEBUG
 debug: all
 	
-$(EXECUTABLE): git_ref.h $(OBJECTS) 
+$(EXECUTABLE): git_ref.h $(OBJECTS)
 	$(CXX) -o $(EXECUTABLE)  $(OBJECTS)  $(LIBS) git_ref.h $(LFLAGS) $(LDFLAGS)
 	rm -f git_ref.h
 
-.cpp.o:
+.cpp.o:  $(HEADER)
 	$(CXX) -c $(CFLAGS) $(INCLUDES) $< -o $@  
 
 git_ref.h:

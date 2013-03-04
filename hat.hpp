@@ -3,18 +3,25 @@
 #ifndef clustgun_hat_h
 #define clustgun_hat_h
 
+#include <omp.h>
+
+#include "basic_tools_omp.hpp"
+
+
+
+class ReaderWriterLock;
 
 
 template <class T>
 class HashedArrayTree { //  powers of two 2^20=1048576
 protected:
-	vector<T * > *hash; // the inner vector will be fixed size, the outer flexibel
+	vector<T * > *hash; // the inner arrays will be fixed size, the outer vector flexibel
 	size_t arrayChunkSize; // choose something like 1MB
 	size_t two_power;
 	size_t mod_mask;
 	bool initialize_elements;
 	T initialization_value;
-	
+	bool size_is_capacity;
 	
 	size_t currentArray;
 	size_t nextFreePos;
@@ -23,11 +30,48 @@ public:
 	#ifdef DEBUG
 	string name;
 	#endif
+
+	HashedArrayTree<T> (bool size_is_capacity, size_t two_power) {
+		this->initialize_elements = false;
+		
+		init(size_is_capacity, two_power);
+	}
+	
+	HashedArrayTree<T> (bool size_is_capacity, size_t two_power, T initialization_value) {
+		
+		this->initialize_elements = true;
+		this->initialization_value = initialization_value;
+		
+		init(size_is_capacity, two_power);
+		
+	}
+	
+	void init(bool size_is_capacity, size_t two_power) {
+		
+		this->size_is_capacity = size_is_capacity;
+		this->two_power = two_power;
+		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power);
+		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
+#ifdef DEBUG
+		try {
+#endif
+			hash = new vector<T * >();
+#ifdef DEBUG
+		} catch (bad_alloc& ba) {
+			cerr << "error: (hash HAT) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
+		}
+#endif
+		currentArray = 0;
+		nextFreePos = 0;
+		
+		
+	}
 	
 	~HashedArrayTree<T>() {
 		//cout << "XX destructor" << this->name << endl;
 		//cout << hash->size() << endl;
-		for (int i = 0; i<hash->size(); ++i){
+		for (int i = 0; i < (int) hash->size(); ++i){
 			//cout << "currentArray:" << currentArray << endl;
 			//cout << "delete: " << i << " " << (*hash)[i] << endl;
 			//cout << "sizeof: " << i << " " << sizeof((*hash)[i]) << endl;
@@ -48,7 +92,15 @@ public:
 			return;
 		}
 		
-		for (int i = 0 ; i < this->capacity(); ++i ){
+		size_t effective_size;
+		if (size_is_capacity) {
+			effective_size = this->capacity();
+		} else {
+			effective_size = this->size();
+		}
+		
+		
+		for (size_t i = 0 ; i < effective_size; ++i ){
 			
 			#ifdef DEBUG
 			try {
@@ -102,18 +154,28 @@ public:
 	
 	
 	size_t size() {
+		if (size_is_capacity) {
+			return capacity();
+		}
 		return ((currentArray)*arrayChunkSize + nextFreePos);
 	}
 	
 	size_t capacity() {
-		return hash->size()*arrayChunkSize;
+		
+		if (hash->size()*arrayChunkSize != hash->size() << two_power) { // TODO
+			cerr << "hash->size()*arrayChunkSize != hash->size() << two_power" << endl;
+			exit(1);
+		}
+		
+		return hash->size() << two_power; // should be same as multiplying with "2^two_power"
+		//return hash->size()*arrayChunkSize;
 	}
 	
-	void reserve (size_t x) {
+	void reserve (size_t new_min_size) { // size, not position !!
+		//cerr << "t: " << omp_get_thread_num() << " reserve " << new_min_size << endl; 
+		size_t array = (new_min_size-1) >> two_power;
 		
-		//size_t requested_array = (x >> two_power);
-//cout << "reserve: req: "  << x << " avail: " << hash->size()*arrayChunkSize << endl;
-		while (hash->size()*arrayChunkSize < x) {
+		while (capacity() < new_min_size) {
 			T * small_vec;
 			#ifdef DEBUG
 			try {
@@ -143,90 +205,92 @@ public:
 			#endif
 		}
 		
-//		if (requested_array*two_power < x) {
-//			T * small_vec;
-//			try {
-//				small_vec = new T [arrayChunkSize];
-//			} catch (bad_alloc& ba) {
-//				cerr << "error: (HAT reserve) bad_alloc caught: " << ba.what() << endl;
-//				exit(1);
-//			}	
-//			if (initialize_elements) {
-//				for (size_t i =0; i < arrayChunkSize; ++i)  {
-//					small_vec[i]=this->initialization_value;
-//				}
-//			}
-//			//cout << "reserve push B" << small_vec  << endl;
-//			try {
-//				hash->push_back(small_vec);
-//			} catch (bad_alloc& ba) {
-//				cerr << "error: (HAT reserve, push_back) bad_alloc caught: " << ba.what() << endl;
-//				exit(1);
-//			}	
-//		}
-		//cout << "reserve len: " << hash->size() << endl;
+		if (array >= hash->size() ) { // hash->size() needs to be bigger than array // TODO in debug
+			cerr << "error: (reserve HAT) array+ >= hash->size() " << endl;
+			cerr << "array: " << array << endl;
+			cerr << "hash->size(): " << hash->size() << endl;
+			cerr << "new_min_size: " << new_min_size << endl;
+			cerr << "pos, new_min_size-1: " << new_min_size-1 << endl;
+			cerr << "capacity(): " << capacity() << endl;
+			
+			exit(1);
+		}
 		
 	}
 	
 	
-	inline T& at(size_t x){
-		// boundary check and increase memory if needed
+	T& at(size_t x){
+		// boundary check 
 
+		size_t array = x >> two_power;         // shifts the insignificant bits away, e.g. two_power is 20 for one 1MB
+		size_t arraypos = x & this->mod_mask;  // I get the least significant bits for local array
 		
-		if (initialize_elements) {
-			reserve(x);
-		} else {
-			if ((x >> two_power) > currentArray) {
-				cerr << "(x >> two_power) > currentArray" << endl;
+		if (not size_is_capacity) {
+		// check size !
+		//	reserve(x);
+			if (array > currentArray) {
+				cerr << "array > currentArray" << endl;
 				exit(1);
 			}
-			if ((x >> two_power) == (currentArray) && (x & this->mod_mask) >= nextFreePos) {
-				cerr << "(x & this->mod_mask) >= nextFreePos" << endl;
+			if (array == currentArray && arraypos >= nextFreePos) {
+				cerr << "arraypos >= nextFreePos" << endl;
+				cerr << "array: " << array << endl;
+				cerr << "arraypos: " << arraypos << endl;
+				cerr << "x: " << x << endl;
+				cerr << "size: " << this->size() << endl;
+				exit(1);
+			}
+			
+			
+		} else {
+		// check capacity!
+			if (array >= hash->size()) { // DO NOT CONFUSE WITH this->size() !!!!
+				cerr << "array > hash->size()" << endl;
+				cerr << "array: " << array << endl;
+				cerr << "hash->size(): " << hash->size() << endl;
+				cerr << "arraypos: " << arraypos << endl;
+				cerr << "x: " << x << endl;
+				cerr << "t: " << omp_get_thread_num() << endl;
+				exit(1);
+			}
+			
+			if (arraypos >= arrayChunkSize) {
+				cerr << "exit: arraypos >= arrayChunkSize" << endl;
 				exit(1);
 			}
 		}
 		
-		#ifdef DEBUG
+		//}
 		
+		
+		T* yyy;
 		try {
-			T& xxx = hash->at(x >> two_power)[ x & this->mod_mask];
+			yyy =hash->at(array);
 		} catch (out_of_range& oor) {
-			cerr << "Out of Range error:(HAT: xxx = hash->at(x >> two_power)[ x & this->mod_mask]e) " << oor.what() << endl;
+			cerr << "Out of Range error:(HAT: yyy =hash->at(array); " << oor.what() << endl;
+			cerr << "arraypos >= nextFreePos" << endl;
+			cerr << "array: " << array << endl;
+			cerr << "arraypos: " << arraypos << endl;
+			cerr << "x: " << x << endl;
+			cerr << "size: " << this->size() << endl;
+			cerr << "hash->size(): " << hash->size() << endl;
 			exit(1);
 		}
 		
-		#endif
+		T& xxx = yyy[arraypos ];
+		return xxx;
 		
-		return (*hash)[x >> two_power][ x & this->mod_mask];
+	
+		
+		//return (*hash)[x >> two_power][ x & this->mod_mask];
 		
 	}
 	
 	
 	inline T& operator[] (size_t x) {
 		
-		
-		
-		//size_t array = x / arrayChunkSize;
-		//size_t arraypos = arrayChunkSize % x;
-		
-		//size_t array = x >> two_power;
-		//size_t arraypos = x & this->mod_mask;
-		
-		
-		//cout << "x: " << x<< endl;
-		//cout << "this->mod_mask: " << this->mod_mask<< endl;
-		//cout << "array: " << array<< endl;
-		//cout << "  arraypos: " <<arraypos << endl;
-		
 		#ifdef DEBUG
-		if ((x >> two_power) >= hash->size()) {
-			cerr << "(x >> two_power) >= hash->size()" << endl;
-			cerr << "(x >> two_power): " <<  (x >> two_power) << endl;
-			cerr << "x: " << x << " hash->size():" << hash->size() << endl;
-			cerr << "this->capacity(): " << this->capacity() << endl;
-			cerr << this->name << endl;
-			exit(1);
-		}
+		return this->at(x);
 		#endif
 		
 		return (*hash)[x >> two_power][ x & this->mod_mask]; 
@@ -330,52 +394,7 @@ public:
 		#endif
 	}	
 	
-	HashedArrayTree<T> (size_t two_power) {
-		this->initialize_elements = false;
-		
-		this->two_power = two_power; 
-		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power); 
-		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
-		#ifdef DEBUG
-		try {
-		#endif
-			hash = new vector< T * >();
-		#ifdef DEBUG	
-		} catch (bad_alloc& ba) {
-			cerr << "error: (HAT hash) bad_alloc caught: " << ba.what() << endl;
-			exit(1);
-		}
-		#endif
-		
-		currentArray = 0;
-		nextFreePos = 0;
-		//this->reserve(arrayChunkSize);
-	};
-	
-	HashedArrayTree<T> (size_t two_power, T initialization_value) {
-		
-		this->initialization_value = initialization_value;
-		this->initialize_elements = true;
-		
-		this->two_power = two_power; 
-		this->arrayChunkSize = (size_t) pow((double)2, (double)two_power); 
-		this->mod_mask=this->arrayChunkSize -1 ; // e.g. converts 1000 into 111
-		#ifdef DEBUG
-		try {
-		#endif
-			hash = new vector<T * >();
-		#ifdef DEBUG
-		} catch (bad_alloc& ba) {
-			cerr << "error: (hash HAT) bad_alloc caught: " << ba.what() << endl;
-			exit(1);
-		}
-		#endif
-		currentArray = 0;
-		nextFreePos = 0;
-		//this->reserve(arrayChunkSize);
-		
-	};
-	
+
 	
 };
 
@@ -384,19 +403,19 @@ class HashedArrayTreeString : public HashedArrayTree<char> {
 
 	
 	public: 
-		HashedArrayTreeString(size_t two_power) :  HashedArrayTree<char> (two_power) {
+		HashedArrayTreeString(size_t two_power) :  HashedArrayTree<char> (false, two_power) {
 			reserve(1);
 		};	
 	
 		char * addSequence(const char * seq, int seqlen) {
 			
-			if (seqlen+1 >= arrayChunkSize) {
+			if (seqlen+1 >= (int) arrayChunkSize) {
 				cerr << "error: seqlen+1 >= arrayChunkSize" << endl;
 				cerr << " input sequence is bigger than internal arrays, please increase default array size" << endl;
 				exit(1);
 			}
 			#ifdef DEBUG
-			if (strlen(seq) != seqlen) {
+			if ((int)strlen(seq) != seqlen) {
 				cerr << "error: strlen(seq) != seqlen:  "<< strlen(seq) << " " << seqlen << endl;
 				exit(1);
 			}
@@ -430,7 +449,7 @@ class HashedArrayTreeString : public HashedArrayTree<char> {
 	
 		char * addData(const char * seq, int datalen) {
 			
-			if (datalen >= arrayChunkSize) {
+			if (datalen >= (int) arrayChunkSize) {
 				cerr << "error: seqlen+1 >= arrayChunkSize" << endl;
 				cerr << " input sequence is bigger than internal arrays, please increase default array size" << endl;
 				exit(1);
@@ -465,5 +484,14 @@ class HashedArrayTreeString : public HashedArrayTree<char> {
 	
 };
 
+template <class T>
+class HashedArrayTree_rwlock : public HashedArrayTree<T>, public ReaderWriterLock {
+	public:
+	
+	HashedArrayTree_rwlock<T>(bool size_is_capacity, int thread_count): HashedArrayTree<T>(), ReaderWriterLock(thread_count) {};
+	HashedArrayTree_rwlock<T>(bool size_is_capacity, int thread_count, size_t two_power): HashedArrayTree<T>(size_is_capacity, two_power), ReaderWriterLock(thread_count) {};
+	HashedArrayTree_rwlock<T>(bool size_is_capacity, int thread_count, size_t two_power, T initialization_value): HashedArrayTree<T>(size_is_capacity, two_power, initialization_value), ReaderWriterLock(thread_count) {};
+	
+};
 
 #endif

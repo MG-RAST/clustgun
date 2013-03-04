@@ -8,6 +8,7 @@
 #include <string>
 #include <cmath>
 
+#include "basic_tools.hpp"
 
 using namespace std;
 
@@ -28,6 +29,8 @@ public:
 	const char* aminoacid_int2ASCII;
 	aminoacid * aminoacid_ASCII2int;
 	int aminoacid_count;
+	
+	int powertable[10];
 	
 	KmerIterator(const char* seq, int seqlen, int startpos, int kmerlength, const char* aminoacid_int2ASCII, aminoacid* aminoacid_ASCII2int, int aminoacid_count);
 	bool nextKmer();

@@ -10,48 +10,33 @@
 #include "main.h"
 
 
-#ifdef TIME
-timespec diff(timespec start, timespec end)
-{
-	timespec temp;
-	if ((end.tv_nsec-start.tv_nsec)<0) {
-		temp.tv_sec = end.tv_sec-start.tv_sec-1;
-		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-	} else {
-		temp.tv_sec = end.tv_sec-start.tv_sec;
-		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-	}
-	return temp;
-}
-
-timespec add_time(timespec time1, timespec time2) {
-	timespec result;
-	result.tv_sec = time1.tv_sec + time2.tv_sec ;
-    result.tv_nsec = time1.tv_nsec + time2.tv_nsec ;
-    if (result.tv_nsec >= 1000000000L) {		/* Carry? */
-        result.tv_sec++ ;  result.tv_nsec = result.tv_nsec - 1000000000L ;
-    }
+#ifdef DEBUG_DEADLOCK
+void printThreadStatus(){
 	
-    return (result) ;
+	cerr << "reporting threads is " << omp_get_thread_num() << endl;
 	
-}
-
-
-#endif
-
-
-struct eqint
-{
-	//bool operator()(const char* s1, const char* s2) const
-	//{
-	//   return (s1 == s2) || (s1 && s2 && strcmp(s1, s2) == 0);
-	//}
-	bool operator()(int s1, int s2) const
+#pragma omp critical(thread_status)
 	{
-		return (s1 == s2);
+		
+		for (int tt = 0; tt < 10 ; tt++) {
+			cerr << thread_status[tt] << ",";
+			
+		}
 	}
-};
+#pragma omp critical(reads_per_thread)
+	{
+		
+		cerr << endl;
+		for (int tt = 0; tt < 10 ; tt++) {
+			cerr << reads_per_thread[tt] << ",";
+			
+		}
+		cerr << endl;
+	}
 
+	
+}
+#endif
 
 struct eqstrXX
 {
@@ -94,10 +79,13 @@ string string_int_2_kmer(int kmer_code) {
 
 
 
-
-int getOffsets(const char * sequence, int seq_len, vector<short> * vector_of_offsets, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint> &cluster_kmer_hash, int max_cluster) {
+// vector_of_offsets contains output !
+int getOffsets(const char * sequence, int seq_len, vector<short> * vector_of_offsets, HashTable * cluster_kmer_hash, int max_cluster) {
 	
-	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
+	#ifndef USE_HashTableSimple
+	HashTable::iterator cluster_kmer_hash_it;
+	#endif
+	
 	KmerIterator * mykmerit;
 	#ifdef DEBUG
 	try {
@@ -112,25 +100,34 @@ int getOffsets(const char * sequence, int seq_len, vector<short> * vector_of_off
 	int number_of_overlapping_kmers_seen = 0;
 	
 	//cout << "search: " << *sequence << endl;
+	kmer_appearance_list::iterator mylist_it;
 	
 	while (mykmerit->nextKmer()) {
 		int code = mykmerit->code;
 		short readpos = mykmerit->kmer_start_pos;
 		
+		#ifndef USE_HashTableSimple
 		
-		cluster_kmer_hash_it = cluster_kmer_hash.find(code);
+		cluster_kmer_hash_it = cluster_kmer_hash->find(code);
 		
-		if (cluster_kmer_hash_it != cluster_kmer_hash.end()) {
+		if (cluster_kmer_hash_it != cluster_kmer_hash->end()) {
+		#endif
+			#ifdef USE_HashTableSimple
+			kmer_appearance_list * mylist = (*cluster_kmer_hash)[code];
+			#else
 			kmer_appearance_list * mylist = cluster_kmer_hash_it->second;
+			#endif
 			//cout << "---- "<< endl;
-			mylist->resetIterator();
-			while (mylist->nextElement()) {
-				int clusterhit = mylist->getFirst();
+			//mylist->resetIterator();
+			mylist->set_reader_lock();
+			for (mylist_it = mylist->begin(); mylist_it != mylist->end(); ++mylist_it) {
+			//while (mylist->nextElement()) {
+				int clusterhit = mylist_it.getFirst();
 							
 				if (clusterhit == max_cluster) {
 					number_of_overlapping_kmers_seen++;
 					//cout << "match: " << string_int_2_kmer(code) << endl;
-					short clusterpos = mylist->getSecond();
+					short clusterpos = mylist_it.getSecond();
 					
 					//cout << "readpos: " << readpos << endl;
 					//cout << "clusterpos: " << clusterpos << endl;
@@ -152,15 +149,15 @@ int getOffsets(const char * sequence, int seq_len, vector<short> * vector_of_off
 				}
 				
 			}	   
-			
-			
+			mylist->unset_reader_lock();
+		#ifndef USE_HashTableSimple	
 		} 
-		
+		#endif
 		
 		
 	} // end while ( kmer iteration )
 	delete mykmerit;
-	return number_of_overlapping_kmers_seen;
+	return number_of_overlapping_kmers_seen; // vector_of_offsets contains output !
 }
 
 bool sortbyPairSecond( const pair<int, short>& i, const pair<int, short>& j ) {
@@ -173,392 +170,244 @@ bool sortbyPairSecond( const pair<int, short>& i, const pair<int, short>& j ) {
 
 
 	
-string * computeConsensus(cluster_member_list * mymemberlist,
+mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster already locked
 						  HashedArrayTree<pair<mystring, mystring > > * inputSequences,
 						  vector<char> * alignment_column,
 						  vector<bool> * aminoacid_occurence,
 						  vector<int> * aminoacid_scores,
-						  short * score_matrix) {
+						  short * score_matrix,
+						  int ** cluster_aminoacid_counts	) {
+	
+	
+	// total procedure requires two passes of member list
+	
+	
+	cluster_member_list::iterator mylist_it;
+	
+	
+	int new_consensus_length = 0; // without base offset adjustment !
+	int base_offset = INT_MAX;
+	
+	// need to adjust base offset (left-most member)
+	// need to find right most member (offset + length)
+	for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
 		
-	vector<pair<int, short> > sorted_members;
-	
-	mymemberlist->resetIterator();
-	while (mymemberlist->nextElement()){
+		
+		
 		#ifdef DEBUG
-		try {
+		int read_id = mylist_it.getFirst();
+		mystring * read_sequence = &(inputSequences->at(read_id).second);
+		#else
+		mystring * read_sequence = &((*inputSequences)[mylist_it.getFirst()].second);
 		#endif
-			sorted_members.push_back(pair<int, short>(mymemberlist->getFirst(), mymemberlist->getSecond()));
-		#ifdef DEBUG
-		} catch (bad_alloc& ba) {
-			cerr << "error: (compteConsensus, push_back) bad_alloc caught: " << ba.what() << endl;
-			exit(1);
-		}	
-		#endif
+		
+		
+		short pos =  mylist_it.getSecond();
+		
+		if ((int)pos + (int)read_sequence->length() > new_consensus_length) {
+			new_consensus_length = pos + read_sequence->length();
+		}
+		
+		// make base_offset small
+		if (pos < base_offset) {
+			base_offset = pos;
+		}
+		
 	}
-	
-	//for (int member = 0; member < sorted_members.size(); ++member) {
-	//	cout << "member: " << member << " offset(org): " << sorted_members[member].second << endl;
-	//}
-	
-	// sort according offset of the members
-	sort(sorted_members.begin(),sorted_members.end(),sortbyPairSecond);
-	
-	//for (int member = 0; member < sorted_members.size(); ++member) {
-	//	cout << "member: " << member << " offset(org): " << sorted_members[member].second << endl;
-	//}
+	// adjust new_consensus_length
+	new_consensus_length-=base_offset;
 	
 	#ifdef DEBUG
-	if (sorted_members.size() == 0) {
-		cerr << "error: sorted_members.length() == 0" << endl;
+	if (new_consensus_length > max_protein_length) {
+		cerr << "error: new_consensus_length > max_protein_length" << endl;
 		exit(1);
 	}
 	#endif
 	
-	int base_offset = sorted_members[0].second;
+	// init cluster_aminoacid_counts
+	for (int i = 0 ; i < new_consensus_length ; ++i ) {
+		int * blabla = cluster_aminoacid_counts[i];
+		for (int j = 0; j < aminoacid_count ; ++j  ) {
+			blabla[j]=0;
+		}
+	}
+	
+	
+	
+//	#ifdef DEBUG
+//	if (sorted_members.size() == 0) {
+//		cerr << "error: sorted_members.length() == 0" << endl;
+//		exit(1);
+//	}
+//	#endif
+	
+	//int base_offset = sorted_members[0].second;
 	//cout << "base_offset: " << base_offset << endl;
-	string * new_consensus_seq;
+	mystring * new_consensus_seq;
 	#ifdef DEBUG
 	try {
 	#endif
-		new_consensus_seq = new string();
+		new_consensus_seq = new mystring(new_consensus_length);
 	#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (computeConsensus) bad_alloc caught: " << ba.what() << endl;
 		exit(1);
 	}
 	#endif
-	// update offsets (leftmost member has now offset zero):
-	for (int member = 0; member < (int) sorted_members.size(); ++member) {
-		//cout << "member: " << member << " offset(org): " << sorted_members[member].second << endl;
+	
+	#ifdef DEBUG
+	for (int i= 0 ; i < new_consensus_length; ++i) {
 		
-		#ifdef DEBUG
-		int member_offset = sorted_members.at(member).second - base_offset;
-		#else
-		int member_offset = sorted_members[member].second - base_offset;
-		#endif
-		
-		#ifdef DEBUG
-		if (member_offset < 0) {
-			cerr <<  "member_offset < 0 : " << member_offset << endl;
-			exit(1);
-		}
-		#endif
-		
-		sorted_members[member].second = member_offset;
-		
-		//cout << sorted_members[member].second[] << endl;
-		//cout << string(member_offset, '_') << *((*inputSequences)[sorted_members[member].first].second)  << endl;
+		(*new_consensus_seq)[i]='-'; // later we can detect something has not been written
 	}
-	// do update also in list !!!
-	mymemberlist->resetIterator();
-	while (mymemberlist->nextElement()){
-		mymemberlist->getSecond() -= base_offset;
-	}
+	#endif
 	
 	
-	int current_ali_position = 0;
-	int first_member = 0;
-	//int last_member;
-	
-	// compute new consensus
-				
-	
-	while (true) { // iterate columns
-		int last_alignment_char = -1;
-		bool saw_aa = false;
-		for (int member = first_member; member < sorted_members.size(); ++member) {
-			if (sorted_members[member].second > current_ali_position) {
-				break; // because it is sorted, there can be no further members...
-			}
-			
-			#ifdef DEBUG
-			int member_length;
-			try {
-			 member_length = (inputSequences->at(sorted_members[member].first).second).length();
-			} catch (out_of_range& oor) {
-				cerr << "Out of Range error:(some_length) " << oor.what() << endl;
-				exit(1);
-			}
-			//if (sorted_members[member].second + some_length - 1 < current_ali_position ){
-			#else
-			int member_length = ((*inputSequences)[sorted_members[member].first].second).length();
-			#endif
-			
-			if (last_alignment_char >= 100 ) {
-				break; // 100 aa's should be enough for consensus
-			}
-				
-			
-			
-			if (sorted_members[member].second + member_length - 1 < current_ali_position ){
-			//if (sorted_members[member].second + ((*inputSequences)[sorted_members[member].first].second)->length() - 1 < current_ali_position ){	
-				if (!saw_aa) {
-					first_member = member + 1;
-				}
-				
-			} else {
-				saw_aa = true;
-				//cout << member << endl;
-				
-				#ifdef DEBUG
-				char aa;
-				try {
-				aa = (inputSequences->at(sorted_members[member].first).second).at(current_ali_position-sorted_members[member].second);
-				} catch (out_of_range& oor)	{
-					cerr << "Out of Range error:(huhuhuh) " << oor.what() << endl;
-					exit(1);
-				}
+	// update the real memberlist
+	// update offsets (leftmost member has now offset zero)
+	// AND put aminoacid counts into matrix
+	for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
+		//mylist_it.getSecond() -= base_offset;
+		
+		int read_id = mylist_it.getFirst();
+		int offset = mylist_it.getSecond() - base_offset;
+		mylist_it.getSecond() = offset;
 
-				#else
-				char aa = ((*inputSequences)[sorted_members[member].first].second)[current_ali_position-sorted_members[member].second];
-				#endif			
-				//cout << aa << endl;
-				
-				last_alignment_char++;
-				#ifdef DEBUG
-				try {
-				alignment_column->at(last_alignment_char) = aa;
-				} catch (out_of_range& oor)	{
-					cerr << "Out of Range error:(alignment_column->at(last_alignment_char) = aa;) " << oor.what() << endl;
-					exit(1);
-				}
-				#else
-				(*alignment_column)[last_alignment_char] = aa;
-				#endif
-			}
-			//cout << string(sorted_members[member].second, '_') << *((*inputSequences)[sorted_members[member].first].second)  << endl;
-		}
-		//exit(0);
-		
-		//find consensus aa:
-		if (last_alignment_char < 0 ) {
-			break;
-		}
-		
-		triplet<bool, char, int> major_aa =  majority_vote<char>(alignment_column, last_alignment_char+1);
-		
-		#ifdef DEBUG
-		char test_char = major_aa.second;
+		mystring * read_sequence = &((*inputSequences)[read_id].second);
 		
 		
-		if ((int)major_aa.second == 0) {
-			cerr << "B    (int)major_aa.second == 0" << endl;
-			exit(1);
-			
-		}
-		if ((int)major_aa.second == 0) {
-			cerr << "BB    (int)major_aa.second == 0" << endl;
-			exit(1);
-			
-		}
-		#endif
-			
-		if (! major_aa.first) {
-			// majority vote did not find a majority, now I use blosum scores to find aminoacid that yields highest score
-		
-			
-			//cerr << "no majority on aa"  << endl;
-			//exit(1);
-			
-			// init:
-			for (aminoacid aa = 0; aa < aminoacid_count; ++aa) {
-				(*aminoacid_occurence)[aa] = false;
-				(*aminoacid_scores)[aa] = 0;
-			}
-			
-			// check which aa are in column
-			for (int i = 0; i <= last_alignment_char; ++i) {
-				#ifdef DEBUG
-				aminoacid aa;
-				try {
-				aa = aminoacid_ASCII2int[alignment_column->at(i)];
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(aminoacid aa = aminoacid_ASCII2int[alignment_column->at(i)]) " << oor.what() << endl;
-					exit(1);
-				}
-				
-				if (aa != -1 ) {
-					try {
-						aminoacid_occurence->at(aa) = true;
-					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(aminoacid_occurence->at(aa) = true;) " << oor.what() << endl;
-						exit(1);
-					}
-				}
-				
-					
-				#else
-				aminoacid aa = aminoacid_ASCII2int[(*alignment_column)[i]];
-				if (aa != -1 ) {
-					(*aminoacid_occurence)[aa] = true;
-				}
-				#endif 
-				
-			}
+		// go through aminoacids in member:
+		for (size_t i = 0; i < read_sequence->length(); ++i ) {
 			#ifdef DEBUG
-			if (major_aa.second != test_char ) {
-				cerr << "A major_aa.second != test_char" << endl;
+			
+			char aa_char = read_sequence->at(i);
+			aminoacid aa = aminoacid_ASCII2int[(int)aa_char];
+			
+			
+			if (offset+(int)i > new_consensus_length || offset+i  < 0 ) {
+				cerr << "error: offset+i > new_consensus_length" << endl;
+				cerr << "offset: " << offset  << endl;
+				cerr << "i: " << i << endl;
+				cerr << "new_consensus_length: " << new_consensus_length << endl;
+				cerr << "max_protein_length: " << max_protein_length << endl;
 				exit(1);
+			}
+			
+			int * aa_array = cluster_aminoacid_counts[offset+i];
+			
+			if (aa >= aminoacid_count) {
+				cerr << "aa >= aminoacid_count || aa < 0" << endl;
+				cerr << (int) aa << endl;
+				cerr << (int) aa_char << " " << aa_char << endl;
+				exit(1);
+			}
+			if (aa > 0 ) { // known amino acid
+				aa_array[aa]++;
+			}
+			#else
+			aminoacid aa = aminoacid_ASCII2int[(int)(*read_sequence)[i]];
+			if (aa > 0 ) { // known amino acid
+				cluster_aminoacid_counts[offset+i][aa]++;
 			}
 			#endif
-			// for each aa count its overall score
-			aminoacid max_aa;
-			int max_aa_score = INT_MIN;
-			for (aminoacid aa = 0; aa < aminoacid_count; ++aa) {
-				#ifdef DEBUG
-				bool occbool;
-				try {
-					occbool = aminoacid_occurence->at(aa);
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(occbool = aminoacid_occurence->at(aa)) " << oor.what() << endl;
-					exit(1);
-				}	
-				if (occbool) {
-				#else
-				if ((*aminoacid_occurence)[aa]) {
-				#endif	
-					// walk through cloumn and compute score
-					for (int i = 0; i <= last_alignment_char; ++i) {
-						#ifdef DEBUG
-						char aa_i;
-						try {
-						aa_i = alignment_column->at(i);
-						} catch (out_of_range& oor) {
-							cerr << "Out of Range error:(aa_i = alignment_column->at(i);) " << oor.what() << endl;
-							exit(1);
-						}		
-						#else
-						char aa_i = (*alignment_column)[i];
-						#endif
-						
-						#ifdef DEBUG
-						if (aminoacid_int2ASCII[aa]+256*aa_i >= 256*256) {
-							cerr << "error: aminoacid_int2ASCII[aa]+256*aa_i >= 256*256" << endl;
-						}
-						#endif
-						
-						#ifdef DEBUG
-						try {
-						aminoacid_scores->at(aa) += score_matrix[aminoacid_int2ASCII[aa]+256*aa_i];
-						} catch (out_of_range& oor) {
-							cerr << "Out of Range error:(aminoacid_scores->at(aa) +=) " << oor.what() << endl;
-							exit(1);
-						}			
-						#else
-						(*aminoacid_scores)[aa] += score_matrix[aminoacid_int2ASCII[aa]+256*aa_i];
-						#endif
-						
-					}
-					//cout << aminoacid_int2ASCII[aa] << ": "<< (*aminoacid_scores)[aa] << endl;
-					
-					#ifdef DEBUG
-					try {
-					if (aminoacid_scores->at(aa) > max_aa_score) {
-						max_aa_score = aminoacid_scores->at(aa);
-						max_aa = aa;
-					}
-					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(aminoacid_scores->at(aa) > max_aa_score) " << oor.what() << endl;
-						exit(1);
-					}	
-					#else
-					if ((*aminoacid_scores)[aa] > max_aa_score) {
-						max_aa_score = (*aminoacid_scores)[aa];
-						max_aa = aa;
-					}
-					#endif
-					
-				}
-			}
-#ifdef DEBUG			
-			if (max_aa_score == INT_MIN) {
-				cerr << "max_aa_score == INT_MIN"<< endl;
-				
-				exit(1);
-			}
-			
-			if ((int)major_aa.second == 0) {
-				cerr << "B4    (int)major_aa.second == 0" << endl;
-				exit(1);
-				
-			}
-			if (major_aa.second != test_char ) {
-				cerr << "major_aa.second != test_char" << endl;
-				exit(1);
-			}
-				
-			if (max_aa < 0 ) {
-				cerr << "max_aa < 0" << endl;
-				exit(1);
-			}
-#endif			
-			//cout << "AA that won: " << aminoacid_int2ASCII[max_aa] << endl;
-			major_aa.second = aminoacid_int2ASCII[max_aa];
-#ifdef DEBUG			
-			if ((int)major_aa.second == 0) {
-				cerr << "A    (int)major_aa.second == 0" << endl;
-				exit(1);
-			}
-#endif				
-			//exit(0);
 		}
 		
-		
-		
-#ifdef DEBUG	
-		if ((int)major_aa.second == 0) {
-			cerr << "D    (int)major_aa.second == 0" << endl;
-			cerr << (int) test_char << endl;
-			if ( major_aa.first) {
-				cerr << "yes" << endl;
-			} else {
-				cerr << "no" << endl;
-			}
-			for (int i = 0; i < (last_alignment_char+1); i++) {
-				cerr << i << ": " << (*alignment_column)[i] << endl;
-			}
-			exit(1);
-			
-		}
-#endif	
-		
-		new_consensus_seq->append(1, major_aa.second);
-#ifdef DEBUG			
-		if ((int)major_aa.second == 0) {
-			cerr << "C    (int)major_aa.second == 0" << endl;
-			
-			exit(1);
-			
-		}
-#endif			
-		if (first_member >= sorted_members.size()) {
-			
-			break;
-		}
-		
-		//cout << "--" << endl;
-		current_ali_position++;
 	}
 	
-#ifdef DEBUG	
-	for(int i = 0 ; i < new_consensus_seq->length(); ++i) {
-		if ( ((int) (*new_consensus_seq)[i]) == 0 ) {
-			cerr << "error: (*new_consensus_seq)[i] == 0"<< endl;
-			cerr << *new_consensus_seq << endl;
-			cerr << i << endl;
-			
-			exit(1);
+	
+	// go through each column to find consenss
+	for (int col_index = 0 ; col_index < new_consensus_length ; ++col_index ) {
+		
+		
+		int * col = cluster_aminoacid_counts[col_index];
+		
+		// do a majority vote:
+		aminoacid max_aa = 0;
+		int max_aa_count = 0;
+		int total_aa_count = 0;
+		
+		for (aminoacid this_aa = 0; this_aa < aminoacid_count ; ++this_aa  ) {
+			int this_aa_count = col[this_aa];
+			total_aa_count += this_aa_count;
+			if (this_aa_count > max_aa_count) {
+				max_aa = this_aa;
+				max_aa_count = this_aa_count;
+			}
 		}
 		
+		if ((double)max_aa_count > (double)total_aa_count*0.5) {
+			// majority found
+			char c = aminoacid_int2ASCII[max_aa];
+			(*new_consensus_seq)[col_index] = c;
+			continue; // goto next column
+		}
+		
+		// majority not found, try sum-of-pairs strategy
+		//int max_score= 0;
+		//max_aa = 0;
+		
+		int best_candiate_score=INT_MIN;
+		aminoacid best_candidate=-1; // X unknown
+		for (aminoacid candidate_aa = 0; candidate_aa < aminoacid_count; ++candidate_aa) {
+			//(*aminoacid_occurence)[aa] = false;
+			//(*aminoacid_scores)[aa] = 0;
+			
+			
+			if ( col[candidate_aa] != 0 ) {
+				int candidate_score = 0;
+				int candidate_aa_256 = 256*candidate_aa;
+				for (aminoacid this_aa = 0; this_aa < aminoacid_count; ++this_aa) {
+					if ( col[this_aa] > 0 ) {
+						candidate_score += ( col[this_aa] * score_matrix[this_aa+candidate_aa_256]  );
+						
+					}
+				}
+				
+				if (candidate_score > best_candiate_score) {
+					best_candiate_score = candidate_score;
+					best_candidate = candidate_aa;
+				}
+			}
+			
+		}
+		if (best_candidate > 0) {
+			char c = aminoacid_int2ASCII[best_candidate];
+			(*new_consensus_seq)[col_index] = c;
+		} else {
+			(*new_consensus_seq)[col_index] = 'X'; // do not like this, but can happen.
+		}
 	}
-#endif		
+
+	#ifdef DEBUG
+	for (int i= 0 ; i < new_consensus_length; ++i) {
+			
+		if ( (*new_consensus_seq)[i] == '-' ) {
+			cerr << "error: (*new_consensus_seq)[i] == '-'" << endl;
+			cerr << new_consensus_seq->c_str() << endl;
+			exit(1);
+		}
+	}
+	#endif
+		
 	return new_consensus_seq;
 }
 
-void addConsensusSequence(const char * sequence, int seq_len, int cluster, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>& cluster_kmer_hash) {
+void addConsensusSequence(mystring * newconsensus, int cluster, HashTable * cluster_kmer_hash) {
 
+//#ifdef DEBUG
+//#pragma omp critical(cerr)
+//	{
+//		cerr << "thread: " << omp_get_thread_num() << " add cluster: " << cluster << " sequence: " << sequence << endl;
+//	}
+//#endif
 	
-	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
+	const char * sequence = newconsensus->c_str();
+	int seq_len = newconsensus->length();
+	
+	#ifndef USE_HashTableSimple
+	HashTable::iterator cluster_kmer_hash_it;
+	#endif
+	
 	KmerIterator * mykmer_insertion_it;
 	#ifdef DEBUG
 	try {
@@ -570,36 +419,88 @@ void addConsensusSequence(const char * sequence, int seq_len, int cluster, spars
 		exit(1);
 	}
 #endif
-	mykmer_insertion_it->reset(0);
+	//mykmer_insertion_it->reset(0);
 
 	while (mykmer_insertion_it->nextKmer()) {
 		int code = mykmer_insertion_it->code;
 		int pos = mykmer_insertion_it->kmer_start_pos;
 		
-		cluster_kmer_hash_it = cluster_kmer_hash.find(code);
+		
+		
+		#ifdef DEBUG
+		// check if kmer is really existing
+		
+		string kmer = string_int_2_kmer(code, kmerlength, aminoacid_int2ASCII, aminoacid_count);
+
+		char * ptrToSubString;
+		ptrToSubString = strstr(sequence,kmer.c_str());
+		
+		if (ptrToSubString == NULL) {
+			
+			
+			cerr << "kmer not found! " << endl;
+			exit(1);
+		}
+		#endif
+		
+		
 		kmer_appearance_list * mylist;
-		if (cluster_kmer_hash_it != cluster_kmer_hash.end()) {
+		
+		#ifndef USE_HashTableSimple
+		cluster_kmer_hash->set_reader_lock();
+		
+		cluster_kmer_hash_it = cluster_kmer_hash->find(code);
+		#endif
+		
+		#ifdef USE_HashTableSimple
+
+		mylist = (*cluster_kmer_hash)[code];
+	
+		#else
+		
+		if (cluster_kmer_hash_it != cluster_kmer_hash->end()) {
+		
+			//found list
+			
 			mylist = cluster_kmer_hash_it->second;
 			
+			cluster_kmer_hash->unset_reader_lock();
 			
 			//cout << "append to old list: " << string_int_2_kmer(code) << endl;
 			//exit(0);
 			
 		} else {
+			//did not find list
 			#ifdef DEBUG
 			try {
-#endif
-				mylist = new kmer_appearance_list();
-				#ifdef DEBUG
+			#endif
+				mylist = new kmer_appearance_list(thread_count);
+			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (new kmer_appearance_list) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}		
-#endif
-			cluster_kmer_hash[code]=mylist;
-			//cout << "add new list" << endl;
+			#endif
+			
+			
+			
+			cluster_kmer_hash->unset_reader_lock(); // to avoid dead lock
+			
+			cluster_kmer_hash->set_writer_lock();
+			
+			(*cluster_kmer_hash)[code]=mylist; // that line is independent of which hash table I use..
+			
+			cluster_kmer_hash->unset_writer_lock();
+			
+			
+			
+			
 		}
+		#endif
+		mylist->set_writer_lock();
 		mylist->append(cluster,pos);
+		mylist->unset_writer_lock();
+		
 		//if (code == 3566)
 		//	cout << "insertX: "<< clusterhit << " " << pos << endl;
 		//if (code == 1579170)
@@ -610,9 +511,19 @@ void addConsensusSequence(const char * sequence, int seq_len, int cluster, spars
 }
 
 // removes kmers from index
-void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>& cluster_kmer_hash) {
+void removeConsensusSequence(mystring * consensus_old, int cluster, HashTable * cluster_kmer_hash) {
 
-	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
+	//#ifdef DEBUG
+	//#pragma omp critical(cerr)
+	//{
+	//cerr << "thread: " << omp_get_thread_num() << " remove cluster: " << cluster << " consensus_old: " << consensus_old->c_str() << endl;
+	//}
+	//#endif
+	
+	#ifndef USE_HashTableSimple
+	HashTable::iterator cluster_kmer_hash_it;
+	#endif
+	
 	KmerIterator * mykmer_deletion_it;
 	#ifdef DEBUG
 	try {
@@ -640,23 +551,50 @@ void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_m
 		
 		//if (cluster == 606 && code == 2644139) {cout << "delete: " << string_int_2_kmer(code) << endl;}
 		
-		cluster_kmer_hash_it = cluster_kmer_hash.find(code);
+		
+
 		kmer_appearance_list * mylist;
-		if (cluster_kmer_hash_it != cluster_kmer_hash.end()) {
+		kmer_appearance_list::iterator mylist_it;
+
+		#ifndef USE_HashTableSimple
+		cluster_kmer_hash->set_reader_lock();
+		#endif
+		
+		#ifdef USE_HashTableSimple
+		if ((*cluster_kmer_hash)[code]!=NULL) {
+		#else
+		cluster_kmer_hash_it = cluster_kmer_hash->find(code);
+		if (cluster_kmer_hash_it != cluster_kmer_hash->end()) { // kmer-list exists
+		#endif
 			
+			#ifdef USE_HashTableSimple
+			mylist = (*cluster_kmer_hash)[code];
+			#else
 			mylist = cluster_kmer_hash_it->second;
-			mylist->resetIterator();
+			#endif
+			
+			#ifndef USE_HashTableSimple
+			cluster_kmer_hash->unset_reader_lock();
+			#endif
+			//mylist->resetIterator();
 			#ifdef DEBUG
 			bool found_kmer = false;
 			#endif
-			while (mylist->nextElement()) {
+			
+			//while (mylist->nextElement()) {
+			
+			//cerr << "start for loop" << endl;
+			mylist->set_writer_lock();
+			for (mylist_it = mylist->begin(); mylist_it != mylist->end(); ++mylist_it) {
 				//if (cluster == 606 && code == 2644139) {cout << "mylist->currentArrayPosition: " << mylist->currentArrayPosition << " mylist->lastArrayPosition: " << mylist->lastArrayPosition << " mylist->getFirst(): "<< mylist->getFirst() << endl; }
-				if (mylist->getFirst() == cluster) {
+				
+				//cerr << mylist_it.getFirst() << " " << cluster << endl;
+				if (mylist_it.getFirst() == cluster) {
 					//if (cluster == 606 && code == 2644139) {mylist->print();}
 					#ifdef DEBUG
 					found_kmer = true;
 					#endif
-					mylist->eraseElement();
+					mylist->erase(mylist_it);
 					//if (cluster == 606 && code == 2644139) {cout << "after erase element" << endl; mylist->print();}
 					//if (mylist->getLength() > 1) {
 					//exit(0);
@@ -665,10 +603,12 @@ void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_m
 				}
 				
 			}
+			mylist->unset_writer_lock();
+			
 			#ifdef DEBUG
 			if (! found_kmer) {
-				cerr << "error: did not find kmer I wanted to delete! cluster: " << cluster << " kmer: " << code << " " << string_int_2_kmer(code) << endl;
-				cerr << *consensus_old << endl;
+				cerr << "error: did not find kmer I wanted to delete! cluster: " << cluster << endl << " kmer: " << code << " \"" << string_int_2_kmer(code) << "\""<< endl;
+				cerr << "string: " << consensus_old->c_str() << endl;
 				mylist->print();
 				exit(1);
 			}
@@ -677,7 +617,8 @@ void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_m
 			//exit(0);
 			
 		} else {
-			cerr << "error: kmer for deletion not found!" << endl;
+			cerr << "error: kmer for deletion not found! cluster "<< cluster << " kmer:" << string_int_2_kmer(code) << endl;
+			cerr << "string: " << consensus_old->c_str() << endl;
 			exit(1);
 			//cout << "add new list" << endl;
 		}
@@ -686,13 +627,116 @@ void removeConsensusSequences(string * consensus_old, int cluster, sparse_hash_m
 	
 	delete mykmer_deletion_it;
 
+	return;
+}
 
+void testConsensusSequence(mystring * consensus_old, int cluster, HashTable * cluster_kmer_hash, int pos_in_source) {
+	
+	
+	
+	#ifndef USE_HashTableSimple
+	HashTable::iterator cluster_kmer_hash_it;
+	#endif
+	KmerIterator * mykmer_deletion_it;
+#ifdef DEBUG
+	try {
+#endif
+		mykmer_deletion_it = new KmerIterator(consensus_old->c_str(), consensus_old->length(), 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+#ifdef DEBUG
+	} catch (bad_alloc& ba) {
+		cerr << "error: (removeConsensusSequence) bad_alloc caught: " << ba.what() << endl;
+		exit(1);
+	}
+#endif
+	
+	while(mykmer_deletion_it->nextKmer()) {
+		
+		int code = mykmer_deletion_it->code;
+				
+		
+		
+		kmer_appearance_list * mylist;
+		kmer_appearance_list::iterator mylist_it;
+		
+		#ifndef USE_HashTableSimple
+		cluster_kmer_hash->set_reader_lock();
+		#endif
+		
+		#ifdef USE_HashTableSimple
+		if (true) {
+			mylist = (*cluster_kmer_hash)[code] ;
+		#else
+		cluster_kmer_hash_it = cluster_kmer_hash->find(code);
+
+		if (cluster_kmer_hash_it != cluster_kmer_hash->end()) { // kmer-list exists
+			
+			mylist = cluster_kmer_hash_it->second;
+		#endif
+			#ifndef USE_HashTableSimple
+			cluster_kmer_hash->unset_reader_lock();
+			#endif
+#ifdef DEBUG
+			bool found_kmer = false;
+#endif
+			
+			
+			mylist->set_reader_lock();
+			for (mylist_it = mylist->begin(); mylist_it != mylist->end(); ++mylist_it) {
+				
+				if (mylist_it.getFirst() == cluster) {
+					
+#ifdef DEBUG
+					found_kmer = true;
+#endif
+					
+					
+					break;
+				}
+				
+			}
+			mylist->unset_reader_lock();
+			
+#ifdef DEBUG
+			if (! found_kmer) {
+
+				#pragma omp critical(cerr)
+				{
+
+				cerr << "error(testConsensusSequence): did not find kmer! cluster: " << cluster << endl << " kmer: " << code << " \"" << string_int_2_kmer(code) << "\""<< endl;
+				cerr << "string: " << consensus_old->c_str() << " len:"<< consensus_old->length() << endl;
+				cerr << "pos_in_source: " << pos_in_source << endl;
+					printThreadStatus();
+				}
+				mylist->print();
+				exit(1);
+				
+			}
+#endif
+			
+			
+		} else {
+#pragma omp critical(cerr)
+			{
+			cerr << "error(testConsensusSequence): kmer not found! cluster "<< cluster << " kmer:" << string_int_2_kmer(code) << endl;
+			cerr << "string: " << consensus_old->c_str() << " len:"<< consensus_old->length() << endl;
+			cerr << "pos_in_source: " << pos_in_source << endl;
+				#ifdef DEBUG_DEADLOCK
+				printThreadStatus();
+				#endif
+			exit(1);
+			}
+		}
+		
+	} // end while
+	
+	delete mykmer_deletion_it;
+	return;
 }
 
 
-bool computeSequenceOverlap(int offset, string * a, string * b, short * score_matrix, int majority_vote_count) {
-	int i = max(0, offset);
-	int j = i - offset;
+bool computeSequenceOverlap(int offset, mystring * a, mystring * b, short * score_matrix, int majority_vote_count) {
+	int start_i = max(0, offset);
+	int start_j = start_i - offset;
 	
 	//cout << "i: " << i << endl;
 	//cout << "j: " << j << endl;
@@ -702,8 +746,8 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 		//if (j<0) {
 		//shift = -j;
 		//}
-		cout << string(j, ' ') << *a << endl;
-		cout << string(i, ' ') << *b << endl;
+		cout << string(start_j, ' ') << a->c_str() << endl;
+		cout << string(start_i, ' ') << b->c_str() << endl;
 	}
 	
 	//if (j<0) {
@@ -715,7 +759,7 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 	int a_len = a->length();
 	int b_len = b->length();
 	
-	int overlap_length = min((a_len - i), (b_len - j));
+	int overlap_length = min((a_len - start_i), (b_len - start_j));
 	//cout << "overlap_length: " << overlap_length << endl; 
 	
 	
@@ -748,11 +792,11 @@ bool computeSequenceOverlap(int offset, string * a, string * b, short * score_ma
 	//int windowScore = 0;
 	
 	
-	int start_i = i;
-	int end_i = i+overlap_length;
+	//int start_i = i;
+	int end_i = start_i+overlap_length;
 	for (int i = start_i; i< end_i ; ++i) {
 		tot_len++;
-		j = i - offset;
+		int j = i - offset;
 		
 		//cout << "i " << (*a)[i] << " "  << (*b)[j] << " " << i << " " << j  << endl;
 		
@@ -862,7 +906,7 @@ bool clusterNeedsUpdate(int size) {
 }
 
 
-void sortInputSequences(HashedArrayTree<pair<string *, string * > > * inputSequences) {
+void sortInputSequences(HashedArrayTree<pair<mystring *, mystring * > > * inputSequences) {
 	cerr << "sort sequences..." << endl;
 	//sort(inputSequences->begin(), inputSequences->end(), sortbyPairSecondLength); // would be nice, but I have no iterators...
 	
@@ -880,7 +924,7 @@ void sortInputSequences(HashedArrayTree<pair<string *, string * > > * inputSeque
 			//cout << " j = " << j << endl;
 			if ( (*inputSequences)[j].second->length() < (*inputSequences)[j+1].second->length() ) {
 				//swap((*inputSequences)[i], (*inputSequences)[i+1]);
-				pair<string * , string * > pp = (*inputSequences)[j];
+				pair<mystring * , mystring * > pp = (*inputSequences)[j];
 				(*inputSequences)[j] = (*inputSequences)[j+1];
 				(*inputSequences)[j+1] = pp;
 				
@@ -956,9 +1000,9 @@ void Clustgun::cluster(string inputfile) {
 	for (aminoacid i = 0 ; i<aminoacid_count; ++i) {
 		char aa = aminoacid_int2ASCII[i];
 		//cout << aa << " " << i << endl;
-		aminoacid_ASCII2int[aa]=i;
+		aminoacid_ASCII2int[(int) aa]=i;
 		aa = tolower ( aa );
-		aminoacid_ASCII2int[aa]=i;
+		aminoacid_ASCII2int[(int) aa]=i;
 		//cout << aa << " " << i << endl;
 	}
   
@@ -1024,42 +1068,18 @@ void Clustgun::cluster(string inputfile) {
 
 
 	
-		
-	
-	//HashedArrayTree<string * > * myHAT = new HashedArrayTree<string * >(3, new string("empty"));
-	//cout << "gotA: " << myHAT->hash->at(0) << endl;
-	
-	//myHAT->push_back(new string("test1"));
-	
-	//myHAT->push_back(new string("test2"));
-	//myHAT->push_back(new string("test3"));
-	//myHAT->push_back(new string("test4"));
-	//myHAT->push_back(new string("test5"));
-//	myHAT->push_back(new string("test6"));
-//	myHAT->push_back(new string("test7"));
-//	myHAT->push_back(new string("test8"));
-//	myHAT->push_back(new string("test9"));
-//	
-	//cout << "gotA: " << *(*myHAT)[0] << endl;
-	//cout << "gotA: " << *(myHAT->at(100)) << endl;
-	//cout << "gotA: " << myHAT->hash->at(0) << endl;
-	//cout << "got: " << myHAT->hash->at(1) << endl;
-	
-	//cout << "gotB: " << myHAT->hash->at(0)->size() << endl;
-	//cout << "gotB: " << *(myHAT->hash->at(0)->at(0)) << endl;
-	//cout << "got: " << myHAT->hash->at(0)->at(1) << endl;
-	
-	//exit(0);
-	
+	#ifndef USE_HashTableSimple
 	sparse_hash_map<int, int, hash<int>, eqint> kmer_count_hash;
 	sparse_hash_map<int, int, hash<int>, eqint>::iterator it;
+	#endif
 	
 	FASTA_Parser * fasta_parser;
 	
+	#ifndef USE_HashTableSimple
 	int total_substrings=0;
+	#endif
 	
-	
-	int total_read_count = 0;
+	size_t total_read_count = 0;
 	string descr;
 	string * fasta_sequence;
 
@@ -1073,7 +1093,7 @@ void Clustgun::cluster(string inputfile) {
 	#ifdef DEBUG
 	try {
 	#endif
-		inputSequences = new HashedArrayTree<pair<mystring, mystring > >(20); // 20 for 2^20=1MB chunks
+		inputSequences = new HashedArrayTree<pair<mystring, mystring > >(false, 20); // 20 for 2^20=1MB chunks
 		#ifdef DEBUG
 	} catch (bad_alloc& ba) {
 		cerr << "error: (inputSequences) bad_alloc caught: " << ba.what() << endl;
@@ -1096,7 +1116,7 @@ void Clustgun::cluster(string inputfile) {
 		
 		
 		
-		if (descr.length() > 0 && fasta_sequence->length() > min_overlap_length) { // won't make sense to keep sequences short as the min_overlap_length
+		if (descr.length() > 0 && (int) fasta_sequence->length() > min_overlap_length) { // won't make sense to keep sequences short as the min_overlap_length
 			//cout << "huhu: " << *sequence << endl;
 			
 			total_read_count++;
@@ -1145,7 +1165,7 @@ void Clustgun::cluster(string inputfile) {
 			}
 			#endif
 			
-			delete fasta_sequence;
+			
 			
 			//cout << "pushed: " << inputSequences->size() << endl;	
 			//cout << *sequence << endl;
@@ -1160,9 +1180,9 @@ void Clustgun::cluster(string inputfile) {
 		} else {
 			ignore_short_seq++;
 			//cerr << "warning: sequence was not accepted..." << endl;
-			delete fasta_sequence;
+			
 		}
-		
+		delete fasta_sequence;
 		
 		//if (total_read_count >= limit_input_reads && limit_input_reads != -1) {
 		//	cerr << "WARNING: numer of reads for debugging purposes limited !!!!!!" << endl;
@@ -1174,8 +1194,9 @@ void Clustgun::cluster(string inputfile) {
 		log_stream << "warning: ignored " << ignore_short_seq << " sequences, because they were shorter than the mininmal overlap length." << endl;
 	}
 	
+	if (total_read_count % 1000000 != 0 || total_read_count == 0 ) {
 	cerr << "total_read_count: " << total_read_count << endl;
-	
+	}
 
 	
 	//cout << "------------- " << *(inputSequences->at(0).second) << endl;
@@ -1206,7 +1227,7 @@ void Clustgun::cluster(string inputfile) {
 	
 	
 	
-	
+	#ifndef USE_HashTableSimple
 	bool kmerabundance = false;
 	
 	if (kmerabundance) {
@@ -1276,113 +1297,46 @@ void Clustgun::cluster(string inputfile) {
 		cout << "totsum: " << totsum << endl;
 	
 	}
-	
+	#endif
 	
 	// -------------------------------------------------------------------------
 	
 	
+	
 		
-	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint> cluster_kmer_hash;
-	sparse_hash_map<int, kmer_appearance_list * , hash<int>, eqint>::iterator cluster_kmer_hash_it;
+	
+	
+	
+	
+	HashTable * cluster_kmer_hash;
+	
 	
 	
 	// --------- CLUSTERS ----------- // cluster objects would have been nice, but I am afraid of memory inefficiency
-	HashedArrayTree<short> * countOfOverlappingKmers;
-	#ifdef DEBUG
-	try {
-	#endif
-		countOfOverlappingKmers = new HashedArrayTree<short>(20, 0);
-	#ifdef DEBUG
-	} catch (bad_alloc& ba) {
-		cerr << "error: (countOfOverlappingKmers) bad_alloc caught: " << ba.what() << endl;
-		exit(1);
-	}	
-	#endif
 	
-	#ifdef DEBUG
-	countOfOverlappingKmers->name = string("countOfOverlappingKmers");
-	#endif
-	HashedArrayTree<int> * lastreadseen;
-	#ifdef DEBUG
-	try {
-	#endif
-		lastreadseen = new HashedArrayTree<int>(20, -1); // this avoids initialization
-	#ifdef DEBUG
-	} catch (bad_alloc& ba) {
-		cerr << "error: (lastreadseen) bad_alloc caught: " << ba.what() << endl;
-		exit(1);
-	}	
-	#endif
+
+	HashedArrayTree_rwlock<mystring * > * cluster_consensus_sequences; //with lock
 	
-	#ifdef DEBUG
-	lastreadseen->name = string("lastreadseen");
-	#endif
-	HashedArrayTree<string * > * cluster_consensus_sequences;
-	#ifdef DEBUG
-	try {
-	#endif
-		cluster_consensus_sequences = new HashedArrayTree<string * >(20, NULL);
-	#ifdef DEBUG
-	} catch (bad_alloc& ba) {
-		cerr << "error: (cluster_consensus_sequences) bad_alloc caught: " << ba.what() << endl;
-		exit(1);
-	}
-	#endif
 	
-	#ifdef DEBUG
-	cluster_consensus_sequences->name = string("cluster_consensus_sequences");
-	#endif	
-	//HashedArrayTree<short> * cluster_consensus_offsets = new HashedArrayTree<short>(20, 0); // offset relative to seed read
 	
-	HashedArrayTree<cluster_member_list * > * cluster_member_lists;
-	#ifdef DEBUG	
-	try {
-	#endif		
-		cluster_member_lists = new HashedArrayTree<cluster_member_list * >(20, NULL);
-	#ifdef DEBUG		
-	} catch (bad_alloc& ba) {
-		cerr << "error: (cluster_member_lists) bad_alloc caught: " << ba.what() << endl;
-		exit(1);
-	}
-	#endif	
-	#ifdef DEBUG
-	cluster_member_lists->name = string("cluster_member_lists");
-	#endif
+	HashedArrayTree_rwlock<cluster_member_list * > * cluster_member_lists; //with lock
 	
-	vector<short> * vector_of_offsets = new vector<short>();
-	vector_of_offsets->resize(max_protein_length);
 	
-	vector<char> * alignment_column = new vector<char>();
-	alignment_column->resize(1000000);
+	HashedArrayTree_rwlock<omp_lock_t > * cluster_locks; //with lock
 	
-	vector<bool> * aminoacid_occurence = new vector<bool>(aminoacid_count, false);
-	vector<int> * aminoacid_scores = new vector<int>(aminoacid_count, 0);
 	
 	int last_cluster=-1;
 
 	
 	
 	
-	countOfOverlappingKmers->reserve(hat_increase_steps);
-	lastreadseen->reserve(hat_increase_steps);
-	cluster_consensus_sequences->reserve(hat_increase_steps);
-	cluster_member_lists->reserve(hat_increase_steps);
+	
+	
 	
 	// -------------------------------------------------------------------------
 	
 	//iterate through all reads to create clusters and match against existing clusters
-	log_stream << "#reads\t#clusters";
-	
-	log_stream << "\tseconds";
-	
-	log_stream << "\tVM[kb]\tRSS[kb]";
-	
-	log_stream << endl;
 
-
-	
-	process_mem_usage(vm, rss);
-	log_stream << "0\t0\t0\t" << (int)vm << "\t" << (int)rss << endl;	
 	
 	
 	size_t sequence_count = inputSequences->size();
@@ -1392,931 +1346,1606 @@ void Clustgun::cluster(string inputfile) {
 		exit(1);
 	}
 	
+	if (sequence_count == 0 ) {
+		cerr << "error: no sequences found..." << endl;
+		exit(1);
+	}
+	
+	//int num_threads = thread_count;
+	const int top_n_clusters = 3;
+	
 	
 	int stat_real_cluster_count=0;
+	int reads_processed = 0;
 	
-    const int top_n_clusters = 3;
-    int max_cluster_id_array[top_n_clusters]; 
-    int max_cluster_kmer_count_array[top_n_clusters];
-    short max_cluster_offsets[top_n_clusters];
+	const int hat_increase_steps = 1048576;
+	
+	
+	if (thread_count_requested > 0) {
+		omp_set_num_threads(thread_count_requested);
+	}
 
-	mystring * sequence = 0;
+	#ifdef DEBUG_DEADLOCK
+	for (int i = 0; i < max_thread_count; ++i)
+	{
+		thread_status[i] =0;
+		reads_per_thread[i] = 0;
+	}
+	#endif
 	
-	for (size_t read_id = 0 ; read_id < sequence_count; read_id++){
+	size_t partial_read_count[max_thread_count];
+	for (int i = 0; i < max_thread_count; ++i)
+	{
+		partial_read_count[i] =0;
+	}
 	
-		//cout << "read_id: " << read_id<< endl;
+	size_t chunk_start = 0;
+	int chunk_size = 20000;
 	
-		sequence = &((*inputSequences)[read_id].second);
-		KmerIterator * mykmerit;
-	#ifdef DEBUG		
+	//#####################################################################################
+	
+	#pragma omp parallel 
+	{
+	
+		int this_thread_id = omp_get_thread_num();
+		
+		if (this_thread_id == 0) {
+			thread_count = omp_get_num_threads();
+			
+			
+			
+			int size_t_size_bits = sizeof(size_t) * CHAR_BIT; // usually CHAR_BIT = 8
+			
+			if (thread_count > size_t_size_bits) {
+				cerr << "error: number of threads bigger than number of bits in size_t type." << sizeof(size_t) << endl;
+				cerr << "threads: " << thread_count << endl;
+				cerr << "bit in size_t: " << size_t_size_bits << endl;
+				exit(1);
+				
+			}
+			
+			
+#ifdef DEBUG
+			try {
+#endif
+				cluster_consensus_sequences = new HashedArrayTree_rwlock<mystring * >(true, thread_count, (size_t) 20, NULL);
+#ifdef DEBUG
+			} catch (bad_alloc& ba) {
+				cerr << "error: (cluster_consensus_sequences) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
+#endif
+			
+#ifdef DEBUG
+			cluster_consensus_sequences->name = string("cluster_consensus_sequences");
+#endif
+			
+			
+#ifdef DEBUG
+			try {
+#endif
+				cluster_member_lists = new HashedArrayTree_rwlock<cluster_member_list * >(true, thread_count, (size_t)20, NULL);
+#ifdef DEBUG
+			} catch (bad_alloc& ba) {
+				cerr << "error: (cluster_member_lists) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
+#endif
+#ifdef DEBUG
+			cluster_member_lists->name = string("cluster_member_lists");
+#endif
+			
+			
+			
+#ifdef DEBUG
+			try {
+#endif
+				cluster_locks = new HashedArrayTree_rwlock<omp_lock_t >(true, thread_count, (size_t) 20);
+#ifdef DEBUG
+			} catch (bad_alloc& ba) {
+				cerr << "error: (cluster_member_lists) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
+#endif
+#ifdef DEBUG
+			cluster_locks->name = string("cluster_member_lists");
+#endif
+			
+			cluster_consensus_sequences->reserve(2*hat_increase_steps);
+			cluster_member_lists->reserve(2*hat_increase_steps);
+			cluster_locks->reserve(2*hat_increase_steps);
+			
+			
+			cluster_kmer_hash = new HashTable();
+			
+			log_stream << "number of threads actually used: " << thread_count<< endl;
+
+			
+			log_stream << "#reads\t#clusters";
+			log_stream << "\tseconds";
+			log_stream << "\tVM[kb]\tRSS[kb]";
+			log_stream << endl;
+			
+			process_mem_usage(vm, rss);
+			log_stream << "0\t0\t0\t" << (int)vm << "\t" << (int)rss << endl;
+			
+			#pragma omp flush
+			
+		}
+		//int num_threads = omp_get_num_threads();
+		//thread_count = num_threads;
+		
+		
+//#pragma omp critical(cerr)
+//		{
+//		cerr << "real thread_count: " << omp_get_num_threads() << endl;
+//		cerr << "thread starts: " << this_thread_id << endl;
+//		}
+		
+		// barrier needed for shared data structures
+		#pragma omp barrier
+		
+		#pragma omp flush
+		
+		HashedArrayTree<short> * countOfOverlappingKmers = 0; // thread private
+		HashedArrayTree<int > * lastreadseen=0;  // thread private
+
+		
+		vector<short> * vector_of_offsets;
+		vector<char> * alignment_column;
+		vector<bool> * aminoacid_occurence;
+		vector<int> * aminoacid_scores;
+		
+		int max_cluster_id_array[top_n_clusters];
+		int max_cluster_kmer_count_array[top_n_clusters];
+		short max_cluster_offsets[top_n_clusters];
+		
+		vector_of_offsets = new vector<short>();
+		vector_of_offsets->resize(max_protein_length);
+		
+		alignment_column = new vector<char>();
+		alignment_column->resize(1000000);
+		
+		aminoacid_occurence = new vector<bool>(aminoacid_count, false);
+		aminoacid_scores = new vector<int>(aminoacid_count, 0);
+		
+		
+		mystring * sequence = 0;
+		
+		#ifndef USE_HashTableSimple
+		HashTable::iterator cluster_kmer_hash_it;
+		#endif
+		
+		int** cluster_aminoacid_counts = new int*[max_protein_length];
+		
+		for (int i = 0 ; i <max_protein_length ; ++i ) {
+			cluster_aminoacid_counts[i]=new int[aminoacid_count];
+		}
+				
+#ifdef DEBUG
 		try {
-	#endif	
-			mykmerit = new KmerIterator(sequence->c_str(), sequence->length(), 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
-	#ifdef DEBUG
+#endif
+			countOfOverlappingKmers = new HashedArrayTree<short>(true, 20, 0); 
+#ifdef DEBUG
 		} catch (bad_alloc& ba) {
-			cerr << "error: (new KmerIterator) bad_alloc caught: " << ba.what() << endl;
+			cerr << "error: (countOfOverlappingKmers) bad_alloc caught: " << ba.what() << endl;
 			exit(1);
 		}
-	#endif	
-		//int max_cluster = -1;
-		//int max_cluster_kmer_count = 0;
+#endif
 		
+#ifdef DEBUG
+		countOfOverlappingKmers->name = string("countOfOverlappingKmers");
+#endif
 		
+		countOfOverlappingKmers->reserve(5*hat_increase_steps);
+		//if ( countOfOverlappingKmers->capacity() < 5*hat_increase_steps ) {
+		//	cerr << "ERROR!!!!!!!!!!" << endl;
+		//	exit(1);
+		//}
 		
-		for (int i = 0; i < top_n_clusters; ++i) {
-			max_cluster_id_array[i]=-1;
-			max_cluster_kmer_count_array[i]=0;
-			
+#ifdef DEBUG
+		try {
+#endif
+			lastreadseen = new HashedArrayTree<int >(true, 20, -1); // this avoids initialization of match counts
+#ifdef DEBUG
+		} catch (bad_alloc& ba) {
+			cerr << "error: (lastreadseen) bad_alloc caught: " << ba.what() << endl;
+			exit(1);
 		}
+#endif
 		
-		//cout << "------------- "<< read_id << " " << *(inputSequences->at(0).second) << endl;
+#ifdef DEBUG
+		lastreadseen->name = string("lastreadseen");
+#endif
+		
+		
+		lastreadseen->reserve(5*hat_increase_steps);
+		
+		size_t first_read_id;
+		size_t last_read_id;
+		
+		while (1) {
+		
+			bool all_reads_processed =false;
+			#pragma omp critical(chunkstart)
+			{
+				if (chunk_start >= sequence_count) {
+					all_reads_processed = true;
+				} else {
+					first_read_id = chunk_start;
+					
+					last_read_id = chunk_start+chunk_size-1;
+					if (sequence_count - 1 < last_read_id) {
+						last_read_id = sequence_count - 1;
+					}
+						
+					chunk_start += chunk_size;
+				}
+			}
+			if (all_reads_processed) {
+				break;
+			}
+			
+			
+					
+		for (size_t read_id = first_read_id ; read_id <= last_read_id; read_id++) { // ############################# READ LOOP ###########
+			MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+			
+			partial_read_count[this_thread_id] = read_id-first_read_id; // no flush to avoid performance-decrease (there are enough flushes elsewhere.. ;) )
+			
+			//#pragma omp critical(reads_per_thread)
+			//{
+			//reads_per_thread[this_thread_id]++;  // too slow!
+			//}
+			
+						
+			bool repeat_loop = false;
+		
+						
+						
+			
+			if (read_id % 1000 == 0) { // TODO not perfect, but I do not know better !
+				//cerr << "XXt: " << this_thread_id << " new_cluster: " << new_cluster << " cap: " << countOfOverlappingKmers->capacity() << endl;
+				#pragma omp flush(last_cluster)
+				int reserve_max = last_cluster+5*hat_increase_steps;
+				
+				countOfOverlappingKmers->reserve(reserve_max); //privat
+				
+				lastreadseen->reserve(reserve_max); //privat
+				
+			}
+#pragma omp flush(last_cluster)
+			if (last_cluster > (int)countOfOverlappingKmers->capacity()-1000) {
+				cerr << "last_cluster > (int)countOfOverlappingKmers->capacity()-1000" << endl;
+				cerr << "last_cluster: " << last_cluster << endl;
+				cerr << "countOfOverlappingKmers->capacity(): " << countOfOverlappingKmers->capacity() << endl;
+				exit(1);
+			}
+			
+			
+			//cout << "read_id: " << read_id<< endl;
+		
+			sequence = &((*inputSequences)[read_id].second);
+			KmerIterator * mykmerit;
+		#ifdef DEBUG		
+			try {
+		#endif	
+				mykmerit = new KmerIterator(sequence->c_str(), sequence->length(), 0, kmerlength, aminoacid_int2ASCII, aminoacid_ASCII2int, aminoacid_count);
+		#ifdef DEBUG
+			} catch (bad_alloc& ba) {
+				cerr << "error: (new KmerIterator) bad_alloc caught: " << ba.what() << endl;
+				exit(1);
+			}
+		#endif	
+			//int max_cluster = -1;
+			//int max_cluster_kmer_count = 0;
+			
+			
+			
+			for (int i = 0; i < top_n_clusters; ++i) {
+				max_cluster_id_array[i]=-1;
+				max_cluster_kmer_count_array[i]=0;
+				
+			}
+			
+			//cout << "------------- "<< read_id << " " << *(inputSequences->at(0).second) << endl;
 
-		
-		// check if read has matches to known clusters, iterate through read kmers
-		#ifdef TIME
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &kmersearch_start);
-		#endif
-		while (mykmerit->nextKmer()) {
-			int code = mykmerit->code;
-			//int pos = mykmerit->kmer_start_pos;
 			
-			//cout << "here code: " << code<< endl;
-			cluster_kmer_hash_it = cluster_kmer_hash.find(code);
+			// check if read has matches to known clusters, iterate through read kmers
+			#ifdef TIME
+			#pragma omp master
+			{
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &kmersearch_start);
+			}
+			#endif
+			kmer_appearance_list::iterator mylist_it;
 			
-			// check if k-mer is indexed:
-			if (cluster_kmer_hash_it != cluster_kmer_hash.end()) {
-				kmer_appearance_list * mylist = cluster_kmer_hash_it->second;
-				//cout << "---- "<< endl;
-				mylist->resetIterator();
-				// check all occurrences of that k-mer
-				while (mylist->nextElement()) {
-					int clusterhit = mylist->getFirst();
+			kmer_appearance_list * mylist;
+			// try to get a read lock, otherwise wait..
+			#ifndef USE_HashTableSimple
+			cluster_kmer_hash->set_reader_lock();
+			#endif
+			
+			while (mykmerit->nextKmer()) {
+				int code = mykmerit->code;
+				//int pos = mykmerit->kmer_start_pos;
+				
+				//cout << "here code: " << code<< endl;
+				
+				#ifdef USE_HashTableSimple
+				if (true) {
+					mylist = (*cluster_kmer_hash)[code];
+				#else
+				cluster_kmer_hash_it = cluster_kmer_hash->find(code);
+				
+				// check if k-mer is indexed:
+				if (cluster_kmer_hash_it != cluster_kmer_hash->end()) {
+					mylist = cluster_kmer_hash_it->second;
+				#endif
 					
-					
-					#ifdef DEBUG
-					if (clusterhit > last_cluster) {
-						cerr << "clusterhit > last_cluster" << endl;
-						cerr << "clusterhit: " << clusterhit << endl;
-						cerr << "last_cluster: " << last_cluster << endl;
-						exit(1);
-					}
-					
-					if (clusterhit > lastreadseen->capacity()) {
-						cerr << "clusterhit > lastreadseen->capacity()" << endl;
-						cerr << "clusterhit: " << clusterhit << endl;
-						cerr << "lastreadseen->capacity(): " << lastreadseen->capacity() << endl;
-						exit(1);
-					}
-					#endif
-					
-					
-					
-					//cerr << "clusterhit: " << clusterhit << endl;
-					if ((*lastreadseen)[clusterhit] == read_id) {
+					//cout << "---- "<< endl;
+					//mylist->resetIterator();
+					// check all occurrences of that k-mer
+					mylist->set_reader_lock();
+					for (mylist_it = mylist->begin(); mylist_it != mylist->end(); ++mylist_it) {
+					//while (mylist->nextElement()) {
+						int clusterhit = mylist_it.getFirst();
+						
+						
 						#ifdef DEBUG
-						if (clusterhit > countOfOverlappingKmers->capacity()) {
-							cerr << "clusterhit > countOfOverlappingKmers->capacity()" << endl;
+						#pragma omp flush(last_cluster)
+						if (clusterhit > last_cluster) {
+							cerr << "clusterhit > last_cluster" << endl;
 							cerr << "clusterhit: " << clusterhit << endl;
-							cerr << "countOfOverlappingKmers->capacity(): " << countOfOverlappingKmers->capacity() << endl;
+							cerr << "last_cluster: " << last_cluster << endl;
 							exit(1);
 						}
-						#endif						
-						short& cluster_overlap_count = (*countOfOverlappingKmers)[clusterhit];
-						cluster_overlap_count++;
 						
-					
+						if (clusterhit >= (int)lastreadseen->capacity()) {
+							cerr << "clusterhit > lastreadseen->capacity()" << endl;
+							cerr << "clusterhit: " << clusterhit << endl;
+							cerr << "lastreadseen->capacity(): " << lastreadseen->capacity() << endl;
+							exit(1);
+						}
+						#endif
 						
-						//(*countOfOverlappingKmers)[clusterhit]++;
-						//cout << "seen before" << endl;
 						
-						// check for threshold
-						if (cluster_overlap_count >= cluster_kmer_overlap_threshold) {
+						
+						//cerr << "clusterhit: " << clusterhit << endl;
+						if ((*lastreadseen)[clusterhit] == (int) read_id) {
+						//int blubbbla = lastreadseen->at(clusterhit);
+						//int blubbbla2 = (int) read_id;
+						//if (blubbbla == blubbbla2) { //  back []
+							#ifdef DEBUG
+							if (clusterhit > (int) countOfOverlappingKmers->capacity()) {
+								cerr << "clusterhit > countOfOverlappingKmers->capacity()" << endl;
+								cerr << "clusterhit: " << clusterhit << endl;
+								cerr << "countOfOverlappingKmers->capacity(): " << countOfOverlappingKmers->capacity() << endl;
+								exit(1);
+							}
+							#endif						
+							short& cluster_overlap_count = (*countOfOverlappingKmers)[clusterhit];
+							cluster_overlap_count++;
 							
-							//int search_pos_in_top_list = top_n_clusters-1;
+						
 							
-							//cout << "----" << endl;
-							//for (int i = 0; i < top_n_clusters; ++i) {
+							//(*countOfOverlappingKmers)[clusterhit]++;
+							//cout << "seen before" << endl;
+							
+							// check for threshold
+							if (cluster_overlap_count >= cluster_kmer_overlap_threshold) {
 								
-							//	cout << i << ") " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
-							//}
-							//exit(0);
-							
-							// check if count is better than the n-th best cluster seen so far 
-							// and check if it is already there
-							
-							// will find first cluster of same size, or first cluster that is bigger, or top of list
-							
-							bool cluster_already_in_top_list=false;
-							//bool best_cluster= false;
-							//bool insert_cluster = false;
-							
-							int search_pos_in_top_list = 0;
-							
-							
-							// search for same size cluster:
-							for ( search_pos_in_top_list = 0;  search_pos_in_top_list < top_n_clusters; ++search_pos_in_top_list) {
-								if (max_cluster_id_array[search_pos_in_top_list] == clusterhit) {
-									cluster_already_in_top_list = true;
-									break;
+								//int search_pos_in_top_list = top_n_clusters-1;
+								
+								//cout << "----" << endl;
+								//for (int i = 0; i < top_n_clusters; ++i) {
+									
+								//	cout << i << ") " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
+								//}
+								//exit(0);
+								
+								// check if count is better than the n-th best cluster seen so far 
+								// and check if it is already there
+								
+								// will find first cluster of same size, or first cluster that is bigger, or top of list
+								
+								bool cluster_already_in_top_list=false;
+								//bool best_cluster= false;
+								//bool insert_cluster = false;
+								
+								int search_pos_in_top_list = 0;
+								
+								
+								// search for same size cluster:
+								for ( search_pos_in_top_list = 0;  search_pos_in_top_list < top_n_clusters; ++search_pos_in_top_list) {
+									if (max_cluster_id_array[search_pos_in_top_list] == clusterhit) {
+										cluster_already_in_top_list = true;
+										break;
+									}
+									
 								}
 								
-							}
-							
-							if (cluster_already_in_top_list) {
-								// update value:
-								
-								max_cluster_kmer_count_array[search_pos_in_top_list] = cluster_overlap_count;
-								
-								// try to move cluster up in list
-								while (true) {
-									if (search_pos_in_top_list == 0) {
-										break;
-									}
+								if (cluster_already_in_top_list) {
+									// update value:
 									
-									if (max_cluster_kmer_count_array[search_pos_in_top_list] > max_cluster_kmer_count_array[search_pos_in_top_list-1] ) {
+									max_cluster_kmer_count_array[search_pos_in_top_list] = cluster_overlap_count;
+									
+									// try to move cluster up in list
+									while (true) {
+										if (search_pos_in_top_list == 0) {
+											break;
+										}
+										
+										if (max_cluster_kmer_count_array[search_pos_in_top_list] > max_cluster_kmer_count_array[search_pos_in_top_list-1] ) {
+											swap(max_cluster_kmer_count_array[search_pos_in_top_list], max_cluster_kmer_count_array[search_pos_in_top_list-1]);
+											swap(max_cluster_id_array[search_pos_in_top_list], max_cluster_id_array[search_pos_in_top_list-1]);
+											
+											search_pos_in_top_list--;
+											
+										} else {
+											break;
+										}
+										
+									} 
+									
+									
+								} 
+															
+								
+								//cout << "search_pos_in_top_list: " << search_pos_in_top_list << endl;
+								//if (search_pos_in_top_list >= top_n_clusters) exit(1);
+								
+								if (! cluster_already_in_top_list && (cluster_overlap_count > max_cluster_kmer_count_array[top_n_clusters-1])) {
+									
+									
+									
+									// insert cluster at insertion point, if inspoint is still in list
+									
+									
+									search_pos_in_top_list = top_n_clusters-1;
+									
+									max_cluster_kmer_count_array[top_n_clusters-1] = cluster_overlap_count;
+									max_cluster_id_array[top_n_clusters-1] = clusterhit;
+									
+									//cout << "AA " << max_cluster_kmer_count_array[search_pos_in_top_list]<< " " << max_cluster_kmer_count_array[search_pos_in_top_list-1] << endl;
+									
+									while (max_cluster_kmer_count_array[search_pos_in_top_list] > max_cluster_kmer_count_array[search_pos_in_top_list-1] ) {
+										//cout << "AA--" << max_cluster_kmer_count_array[search_pos_in_top_list]<< " " << max_cluster_kmer_count_array[search_pos_in_top_list-1] << endl;
 										swap(max_cluster_kmer_count_array[search_pos_in_top_list], max_cluster_kmer_count_array[search_pos_in_top_list-1]);
 										swap(max_cluster_id_array[search_pos_in_top_list], max_cluster_id_array[search_pos_in_top_list-1]);
-										
 										search_pos_in_top_list--;
-										
-									} else {
-										break;
+										if (search_pos_in_top_list == 0) {
+											break;
+										}
+										//exit(0);
 									}
-									
+										
+																	
 								} 
 								
 								
-							} 
+																
+								//cout << "----" << endl;
+								//for (int i = 0; i < top_n_clusters; ++i) {
+									
+								//	cout << i << ") " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
+								//}
+								#ifdef DEBUG
+								if (max_cluster_id_array[0] == max_cluster_id_array[1]) {
+									cerr << "error: max_cluster_id_array[0] == max_cluster_id_array[1]" << endl;
+									exit(1);	
+								} 
+								if (max_cluster_id_array[0] == max_cluster_id_array[2]) {
+									cerr << "error: ax_cluster_id_array[0] == max_cluster_id_array[2]" << endl;
+									exit(1);	
+								} 
+								#endif
+								//if (max_cluster_kmer_count_array[0] > 100000) exit(0);  	
+								
+								
+							}
+							
+							
+						} else {
+							#ifdef DEBUG
+							if (clusterhit >= (int) lastreadseen->capacity() ){
+								cerr << "clusterhit >= lastreadseen->capacity()" << endl;
+								cerr << clusterhit << " " << lastreadseen->capacity() << endl;
+								exit(1);
+							}
+							
+							if (clusterhit >= (int) countOfOverlappingKmers->capacity() ){
+								cerr << "clusterhit >= countOfOverlappingKmers->capacity()" << endl;
+								cerr << clusterhit << " " << countOfOverlappingKmers->capacity() << endl;
+								exit(1);
+							}
+							
+							#endif
+							
+							(*lastreadseen)[clusterhit] = read_id;
+							(*countOfOverlappingKmers)[clusterhit]=1;
+							//cout << "not seen before" << endl;
+						}// end if
+					} // end for
+					mylist->unset_reader_lock();
+					
+				} // end if
+				
+				
+			} // end while ( kmer iteration )
+			#ifndef USE_HashTableSimple
+			cluster_kmer_hash->unset_reader_lock();
+			#endif
+			
+			MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+				
+			#ifdef TIME
+			#pragma omp master
+			{
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &kmersearch_end);
+			kmersearch_total = add_time( overlap_total, diff(kmersearch_start, kmersearch_end));
+			}
+			#endif
+			
+			
+			delete mykmerit; 	
+					
+	//		if (read_id > 1791) {
+	//			cout << "read_id: " << read_id<< endl;
+	//			kmer_appearance_list * mylist;
+	//			cluster_kmer_hash_it = cluster_kmer_hash.find(2644139);
+	//			if (cluster_kmer_hash_it != cluster_kmer_hash.end()) {
+	//				mylist = cluster_kmer_hash_it->second;
+	//				if (mylist->start == NULL ) {
+	//					cerr << "NULL" << endl;
+	//					exit(1);
+	//				}
+	//				mylist->print();
+	//				//if (mylist->start->data_array1[0] != 1601) {
+	//				//	cout << "read_id" << read_id << endl; 
+	//				//	exit(0);
+	//				//}
+	//			} else {
+	//				cout << "not found: " << read_id << endl;
+	//				exit(0);
+	//			}				
+	//		}
+			
+			//cout << max_cluster_id_array[0] << endl;
+			
+			#ifdef TIME
+			#pragma omp master
+			{
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &validation_start);
+			}
+			#endif
+			int validated_overlaps=0;
+			
+			// validate overlaps
+			if (max_cluster_id_array[0] >= 0) { // number of k-mer-hits indicates a hit, needs to be verified.
+				
+				// (probably) found cluster for the read !
+				
+				//int seed_sequence_number =  (*cluster_seedread)[max_cluster];
+				
+				if (false) {
+					cout << "yeah --------------------" << endl;
+					cout << "read: " << read_id << endl;
+					cout << "readseq: " << sequence << endl;
+					//cout << "max_cluster: " << max_cluster << endl;
+					//cout << "max_cluster_kmer_count: " << max_cluster_kmer_count << endl;
+					
+					//cout << "cluster seed num: " << seed_sequence_number << endl;
+				
+					//cout << "cluster seed seq: " << *((*inputSequences)[seed_sequence_number].second) << endl;
+				}
+				
+				
+				
+				
+				// check for each cluster in top-list if the overlap is real:
+				
+				for (int cluster_it=0; cluster_it < top_n_clusters; ++cluster_it) {
+					
+					//if (read_id == 414) {
+					//	for (int i = 0; i < top_n_clusters; ++i) {
+							
+					//		cout << i << "] " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
+					////	}
+					//}
+					
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					if (max_cluster_id_array[cluster_it] == -1) {
+						break;
+					}
+					
+					// store overlaps in vector_of_offsets
+					#ifndef USE_HashTableSimple
+					cluster_kmer_hash->set_reader_lock();
+					#endif
+					int number_of_overlapping_kmers_seen = getOffsets(sequence->c_str(),
+																	  sequence->length(),
+																	  vector_of_offsets,	// <-- output
+																	  cluster_kmer_hash,
+																	  max_cluster_id_array[cluster_it]);
+					#ifndef USE_HashTableSimple
+					cluster_kmer_hash->unset_reader_lock();
+					#endif
+					
+					// majority vote on offsets				
+					triplet<bool, short, int> major = majority_vote<short>(vector_of_offsets, number_of_overlapping_kmers_seen);
+					bool overlap_found=major.first;
+					short majority_offset=major.second;
+					
+					// check if the number on of k-mers at main diagonal is still sufficient for threshold
+					if (false) {
+						if (overlap_found) {
+							int real_kmer_count = 0;
+							//cout << "--" << endl;
+							for (int i = 0; i<number_of_overlapping_kmers_seen; ++i) {
+								//cout <<(*vector_of_offsets)[i] << endl;
+								if ((*vector_of_offsets)[i] == majority_offset) {
+									real_kmer_count++;	
+									
+								}
+							}
+							
+							//cout << "real_kmer_count: " << real_kmer_count << endl;
+							if (real_kmer_count < cluster_kmer_overlap_threshold) {
+								overlap_found = false;
+							}
+						}
+					}
+					
+					int cluster;
+					
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					while (1) { // not a real loop, just want to be able to leave block.. ;)
+						if (not overlap_found) {
+							break;
+						}
+			
+						//check overlap:
+						cluster = max_cluster_id_array[cluster_it];
+						
+						// lock cluster 
+						omp_lock_t * my_cluster_lock = &(*cluster_locks)[cluster];
+						//#pragma omp critical(cerr)
+						//{
+						//	cerr << "thread: " << this_thread_id << " clusterlock: " << cluster << endl;
+						//}
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						ScopedLock lalala(my_cluster_lock);
+						//#pragma omp flush
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						//check if it exists
+						cluster_member_lists->set_reader_lock();
+						
+						if ((*cluster_member_lists)[cluster] == NULL ) {
+							// cluster does not exist anymore!
+							overlap_found = false;
+							cluster_member_lists->unset_reader_lock();
+							break;
+						}
+						cluster_member_lists->unset_reader_lock();
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						
+						cluster_consensus_sequences->set_reader_lock();
+						mystring * consensus_seq;
+						#ifdef DEBUG
+						try {
+						consensus_seq = cluster_consensus_sequences->at(cluster);
+						} catch (out_of_range& oor) {
+							cerr << "Out of Range error:(consensus_seq = cluster_consensus_sequences->at(cluster)) " << oor.what() << endl;
+							exit(1);
+						}
+						#else
+						consensus_seq = (*cluster_consensus_sequences)[cluster];
+						#endif
+						cluster_consensus_sequences->unset_reader_lock();
+						
+						if (consensus_seq == NULL) {
+							
+							#ifdef DEBUG
+							cluster_member_list * cluster_memberlist;
+							try {
+							cluster_memberlist = cluster_member_lists->at(cluster);
+							} catch (out_of_range& oor) {
+								cerr << "Out of Range error:(cluster_member_list * cluster_memberlist = cluster_member_lists->at(cluster)) " << oor.what() << endl;
+								exit(1);
+							}
+							#else
+							cluster_member_list * cluster_memberlist = (*cluster_member_lists)[cluster];
+							#endif
 														
 							
-							//cout << "search_pos_in_top_list: " << search_pos_in_top_list << endl;
-							//if (search_pos_in_top_list >= top_n_clusters) exit(1);
+							int cluster_read = cluster_memberlist->start->data_array1[0];
 							
-							if (! cluster_already_in_top_list && (cluster_overlap_count > max_cluster_kmer_count_array[top_n_clusters-1])) {
-								
-								
-								
-								// insert cluster at insertion point, if inspoint is still in list
-								
-								
-								search_pos_in_top_list = top_n_clusters-1;
-								
-								max_cluster_kmer_count_array[top_n_clusters-1] = cluster_overlap_count;
-								max_cluster_id_array[top_n_clusters-1] = clusterhit;
-								
-								//cout << "AA " << max_cluster_kmer_count_array[search_pos_in_top_list]<< " " << max_cluster_kmer_count_array[search_pos_in_top_list-1] << endl;
-								
-								while (max_cluster_kmer_count_array[search_pos_in_top_list] > max_cluster_kmer_count_array[search_pos_in_top_list-1] ) {
-									//cout << "AA--" << max_cluster_kmer_count_array[search_pos_in_top_list]<< " " << max_cluster_kmer_count_array[search_pos_in_top_list-1] << endl;
-									swap(max_cluster_kmer_count_array[search_pos_in_top_list], max_cluster_kmer_count_array[search_pos_in_top_list-1]);
-									swap(max_cluster_id_array[search_pos_in_top_list], max_cluster_id_array[search_pos_in_top_list-1]);
-									search_pos_in_top_list--;
-									if (search_pos_in_top_list == 0) {
-										break;
-									}
-									//exit(0);
-								}
-									
-																
-							} 
-							
-							
-															
-							//cout << "----" << endl;
-							//for (int i = 0; i < top_n_clusters; ++i) {
-								
-							//	cout << i << ") " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
-							//}
 							#ifdef DEBUG
-							if (max_cluster_id_array[0] == max_cluster_id_array[1]) {
-								cerr << "error: max_cluster_id_array[0] == max_cluster_id_array[1]" << endl;
-								exit(1);	
-							} 
-							if (max_cluster_id_array[0] == max_cluster_id_array[2]) {
-								cerr << "error: ax_cluster_id_array[0] == max_cluster_id_array[2]" << endl;
-								exit(1);	
-							} 
+							//pair<mystring,mystring> pp = inputSequences->at(cluster_read);
+							//string tempstring = string(pp.second.c_str());
+							
+							
+							try {
+							//consensus_seq = new mystring(tempstring);
+								
+							consensus_seq = &(inputSequences->at(cluster_read).second);
+							} catch (out_of_range& oor) {
+								cerr << "Out of Range error:(consensus_seq = inputSequences->at(cluster_read).second) " << oor.what() << endl;
+								exit(1);
+							}
+							#else
+							//consensus_seq = new mystring(string((*inputSequences)[cluster_read].second.c_str()));
+							
+							consensus_seq = &((*inputSequences)[cluster_read].second);
 							#endif
-							//if (max_cluster_kmer_count_array[0] > 100000) exit(0);  	
-							
-							
 						}
 						
-						
-					} else {
-						#ifdef DEBUG
-						if (clusterhit >= lastreadseen->capacity() ){
-							cerr << "clusterhit >= lastreadseen->capacity()" << endl;
-							cerr << clusterhit << " " << lastreadseen->capacity() << endl;
-							exit(1);
+						//mystring help_sequence = mystring(sequence->c_str());
+						overlap_found = computeSequenceOverlap(majority_offset, consensus_seq, sequence, score_matrix, major.third);
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					
+						//exit(1);
+						//computeSequenceOverlap(int offset, string * a, string * b, short * score_matrix)
+					
+					
+						if (not overlap_found) {
+							break;
 						}
-						
-						if (clusterhit >= countOfOverlappingKmers->capacity() ){
-							cerr << "clusterhit >= countOfOverlappingKmers->capacity()" << endl;
-							cerr << clusterhit << " " << countOfOverlappingKmers->capacity() << endl;
-							exit(1);
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						validated_overlaps++;
+						//if (read_id == 414) {
+						//	cout<< "::: " << cluster_it  << " " << validated_overlaps << endl;
+						//}
+						if (cluster_it != (validated_overlaps-1)) {
+							max_cluster_id_array[validated_overlaps-1] = max_cluster_id_array[cluster_it];
+							max_cluster_kmer_count_array[validated_overlaps-1] = max_cluster_kmer_count_array[cluster_it];
 						}
+						max_cluster_offsets[validated_overlaps-1] = majority_offset;
+						break;
 						
-						#endif
-						
-						(*lastreadseen)[clusterhit] = read_id;
-						(*countOfOverlappingKmers)[clusterhit]=1;
-						//cout << "not seen before" << endl;
+					}// end while(1)
+					
+					if (not overlap_found) {
+						max_cluster_id_array[cluster_it] = -1;
+						max_cluster_kmer_count_array[cluster_it] = 0;
 					}
-				} // end while
+					
+				}
+								
 				
-			} 				
-			
-			
-		} // end while ( kmer iteration )
-		#ifdef TIME
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &kmersearch_end);
-		kmersearch_total = add_time( overlap_total, diff(kmersearch_start, kmersearch_end));
-		#endif
-		
-		
-		delete mykmerit; 	
+					
+				MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 				
-//		if (read_id > 1791) {
-//			cout << "read_id: " << read_id<< endl;
-//			kmer_appearance_list * mylist;
-//			cluster_kmer_hash_it = cluster_kmer_hash.find(2644139);
-//			if (cluster_kmer_hash_it != cluster_kmer_hash.end()) {
-//				mylist = cluster_kmer_hash_it->second;
-//				if (mylist->start == NULL ) {
-//					cerr << "NULL" << endl;
-//					exit(1);
-//				}
-//				mylist->print();
-//				//if (mylist->start->data_array1[0] != 1601) {
-//				//	cout << "read_id" << read_id << endl; 
-//				//	exit(0);
-//				//}
-//			} else {
-//				cout << "not found: " << read_id << endl;
-//				exit(0);
-//			}				
-//		}
-		
-		//cout << max_cluster_id_array[0] << endl;
-		
-		#ifdef TIME
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &validation_start);
-		#endif
-		int validated_overlaps=0;
-		
-		// validate overlaps
-		if (max_cluster_id_array[0] >= 0) { // number of k-mer-hits indicates a hit, needs to be verified.
-			// (probably) found cluster for the read !
-			
-			//int seed_sequence_number =  (*cluster_seedread)[max_cluster];
-			
-			if (false) {
-				cout << "yeah --------------------" << endl;
-				cout << "read: " << read_id << endl;
-				cout << "readseq: " << sequence << endl;
-				//cout << "max_cluster: " << max_cluster << endl;
-				//cout << "max_cluster_kmer_count: " << max_cluster_kmer_count << endl;
 				
-				//cout << "cluster seed num: " << seed_sequence_number << endl;
+				
+			} // end if (max_cluster_id_array[0] >= 0)
 			
-				//cout << "cluster seed seq: " << *((*inputSequences)[seed_sequence_number].second) << endl;
+			#ifdef TIME
+			#pragma omp master
+			{
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &validation_end);
+			validation_total = add_time( validation_total, diff(validation_start, validation_end));
+			//cerr << validation_start << " " << validation_end << endl;
 			}
+			#endif
 			
 			
-			
-			
-			// check for each cluster in top-list if the overlap is real:
-			
-			for (int cluster_it=0; cluster_it < top_n_clusters; ++cluster_it) {
+			MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 				
-				//if (read_id == 414) {
-				//	for (int i = 0; i < top_n_clusters; ++i) {
-						
-				//		cout << i << "] " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
-				////	}
+			// ************ process overlaps ************
+			//cout << "validated_overlaps"  << endl;
+			#ifdef TIME
+			#pragma omp master
+			{
+			clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &overlap_start);
+			}
+			#endif
+				
+				// disable merging
+				//if (validated_overlaps >=2 ) {
+				//	validated_overlaps=1 ;
 				//}
 				
 				
-				if (max_cluster_id_array[cluster_it] == -1) {
-					break;
-				}
-				
-				// store overlaps in vector_of_offsets
-				int number_of_overlapping_kmers_seen = getOffsets(sequence->c_str(),
-																  sequence->length(),
-																  vector_of_offsets,	// <-- output
-																  cluster_kmer_hash,
-																  max_cluster_id_array[cluster_it]);
-				
-				// majority vote on offsets				
-				triplet<bool, short, int> major = majority_vote<short>(vector_of_offsets, number_of_overlapping_kmers_seen);
-				bool overlap_found=major.first;
-				short majority_offset=major.second;
-				
-				// check if the number on of k-mers at main diagonal is still sufficient for threshold
-				if (false) {
-					if (overlap_found) {
-						int real_kmer_count = 0;
-						//cout << "--" << endl;
-						for (int i = 0; i<number_of_overlapping_kmers_seen; ++i) {
-							//cout <<(*vector_of_offsets)[i] << endl;
-							if ((*vector_of_offsets)[i] == majority_offset) {
-								real_kmer_count++;	
-								
-							}
-						}
-						
-						//cout << "real_kmer_count: " << real_kmer_count << endl;
-						if (real_kmer_count < cluster_kmer_overlap_threshold) {
-							overlap_found = false;
-						}
-					}
-				}
-				
-				
-				
-				if (overlap_found) {
-		
-					//check overlap:
-					int cluster = max_cluster_id_array[cluster_it];
+			while (true) {
+				if (validated_overlaps == 0) {
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					// did not found matches, insert as new cluster
+					#pragma omp atomic
+					stat_real_cluster_count++;
 					
+					omp_lock_t * my_cluster_lock;
+					
+					int new_cluster;
+					
+					
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					
+					
+					#pragma omp critical(last_cluster_update)
+					{
+						last_cluster++;
+						
+						new_cluster = last_cluster;
+						// make sure the HAT-arrays have enough memory allocated
+						// this has the advantage I can use []-operator instead of at()-function
+						
+						// increase global arrays (only one thread can do this!)
+						if ((new_cluster % hat_increase_steps) == 0) { // make sure that other threads have sufficient space!
+							int reserve_max = new_cluster+hat_increase_steps+1;
+MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+							
+							
+							cluster_consensus_sequences->set_writer_lock();
+							cluster_consensus_sequences->reserve(reserve_max); //shared!
+							cluster_consensus_sequences->unset_writer_lock();
+MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+							cluster_member_lists->set_writer_lock();
+							cluster_member_lists->reserve(reserve_max); //shared!
+							cluster_member_lists->unset_writer_lock();
+MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+							cluster_locks->set_writer_lock();
+							cluster_locks->reserve(reserve_max); //shared!
+							cluster_locks->unset_writer_lock();
+						}
+//MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						my_cluster_lock = &(*cluster_locks)[new_cluster];
+						
+MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						//#pragma omp critical(cerr)
+						//{
+						//	cerr << "thread: " << this_thread_id << " clusterlock: " << new_cluster << endl;
+						//}
+						
+						
+						//#pragma omp flush
+						
+						
+						
+						
+						
+						//omp_set_lock(my_cluster_lock);
+					} // end pragma critical
+					
+						
+					
+					
+					
+					omp_init_lock(my_cluster_lock);
+					ScopedLock lalala(my_cluster_lock);
+					
+					
+					
+MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					// insert seed as first member:
+					
+					cluster_member_lists->set_reader_lock();
 					#ifdef DEBUG
-					string * consensus_seq;
+					
+					cluster_member_list * templist;
+					
 					try {
-					consensus_seq = cluster_consensus_sequences->at(cluster);
+						templist = cluster_member_lists->at(new_cluster);
 					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(consensus_seq = cluster_consensus_sequences->at(cluster)) " << oor.what() << endl;
+						cerr << "Out of Range error:(templist = cluster_member_lists->at(new_cluster)) " << oor.what() << endl;
 						exit(1);
 					}
+					
+					
+					cluster_member_list*& mymemberlist = cluster_member_lists->at(new_cluster);
 					#else
-					string * consensus_seq = (*cluster_consensus_sequences)[cluster];
+					cluster_member_list*& mymemberlist = (*cluster_member_lists)[new_cluster]; // alias to a pointer
 					#endif
-					if (consensus_seq == NULL) {
-						#ifdef DEBUG
-						cluster_member_list * cluster_memberlist;
-						try {
-						cluster_memberlist = cluster_member_lists->at(cluster);
-						} catch (out_of_range& oor) {
-							cerr << "Out of Range error:(cluster_member_list * cluster_memberlist = cluster_member_lists->at(cluster)) " << oor.what() << endl;
-							exit(1);
-						}
-						#else
-						cluster_member_list * cluster_memberlist = (*cluster_member_lists)[cluster];
-						#endif
-						int cluster_read = cluster_memberlist->start->data_array1[0];
-						
-						#ifdef DEBUG
-						try {
-						consensus_seq = new string(inputSequences->at(cluster_read).second.c_str());
-						} catch (out_of_range& oor) {
-							cerr << "Out of Range error:(consensus_seq = inputSequences->at(cluster_read).second) " << oor.what() << endl;
-							exit(1);
-						}
-						#else
-						consensus_seq = new string((*inputSequences)[cluster_read].second.c_str());
-						#endif
-					}
+					cluster_member_lists->unset_reader_lock();
+MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					//cout << mymemberlist << endl;
+					assert( (mymemberlist == NULL) );
 					
-					string help_sequence = string(sequence->c_str());
-					overlap_found = computeSequenceOverlap(majority_offset, consensus_seq, &help_sequence, score_matrix, major.third);
-					
-				
-					//exit(1);
-					//computeSequenceOverlap(int offset, string * a, string * b, short * score_matrix)
-				}
-				
-				if (overlap_found) {
-					validated_overlaps++;
-					//if (read_id == 414) {
-					//	cout<< "::: " << cluster_it  << " " << validated_overlaps << endl;
-					//}
-					if (cluster_it != (validated_overlaps-1)) {
-						max_cluster_id_array[validated_overlaps-1] = max_cluster_id_array[cluster_it];
-						max_cluster_kmer_count_array[validated_overlaps-1] = max_cluster_kmer_count_array[cluster_it];
-					}
-					max_cluster_offsets[validated_overlaps-1] = majority_offset;
-					
-				} else {
-					max_cluster_id_array[cluster_it] = -1;
-					max_cluster_kmer_count_array[cluster_it] = 0;
-				}
-				
-			}
-			
-			
-			
-				
-			
-			
-			
-			
-		} // end if (max_cluster_id_array[0] >= 0)
-		
-		#ifdef TIME
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &validation_end);
-		validation_total = add_time( validation_total, diff(validation_start, validation_end));
-		//cerr << validation_start << " " << validation_end << endl;
-		#endif
-		
-		
-		
-		// ************ process overlaps ************
-		//cout << "validated_overlaps"  << endl;
-		#ifdef TIME
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &overlap_start);
-		#endif
-		while (true) {
-			if (validated_overlaps == 0) {
-				
-				// did not found matches, insert as new cluster
-				stat_real_cluster_count++;
-				last_cluster++;
-				
-				// make sure the HAT-arrays have enough memory allocated
-				// this has the advantage I can use []-operator instead of at()-function
-				
-				if ((last_cluster % hat_increase_steps) == 0) {
-					int reserve_max = last_cluster+hat_increase_steps;
-					
-					countOfOverlappingKmers->reserve(reserve_max);
-					lastreadseen->reserve(reserve_max);
-					cluster_consensus_sequences->reserve(reserve_max);
-					cluster_member_lists->reserve(reserve_max);
-					
-				}
-				
-				
-				// insert seed as first member:
-				
-				#ifdef DEBUG
-				
-				cluster_member_list * templist;
-				try {
-					templist = cluster_member_lists->at(last_cluster);
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(templist = cluster_member_lists->at(last_cluster)) " << oor.what() << endl;
-					exit(1);
-				}
-				
-				cluster_member_list*& mymemberlist = cluster_member_lists->at(last_cluster);
-				#else
-				cluster_member_list*& mymemberlist = (*cluster_member_lists)[last_cluster]; // alias to a pointer
-				#endif			
-				//cout << mymemberlist << endl;
-				assert( (mymemberlist == NULL) );
-				#ifdef DEBUG					
-				try {
-				#endif
-					mymemberlist = new cluster_member_list();
-				#ifdef DEBUG
-				} catch (bad_alloc& ba) {
-					cerr << "error: (new cluster_member_list) bad_alloc caught: " << ba.what() << endl;
-					exit(1);
-				}
-				#endif				
-				mymemberlist->append(read_id, 0);
-				
-				
-				
-				addConsensusSequence(sequence->c_str(), sequence->length(), last_cluster, cluster_kmer_hash);
-				
-				break;
-				
-			} else if (validated_overlaps == 1) { // read has match to exactly one cluster
-				
-				int clusterhit = max_cluster_id_array[0];
-				
-				
-				#ifdef DEBUG
-				
-				cluster_member_list * templist;
-				try {
-					templist = cluster_member_lists->at(clusterhit);
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(templist = cluster_member_lists->at(clusterhit)) " << oor.what() << endl;
-					exit(1);
-				}
-				
-				cluster_member_list*& mymemberlist = cluster_member_lists->at(clusterhit);
-				#else
-				cluster_member_list*& mymemberlist = (*cluster_member_lists)[clusterhit]; // alias to a pointer
-				#endif	
-								
-				if (mymemberlist == NULL){
+					cluster_member_lists->set_writer_lock();
+//MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 					#ifdef DEBUG
 					try {
 					#endif
-						mymemberlist = new cluster_member_list();
+						mymemberlist = new cluster_member_list(); //modified cluster_member_lists ! (alias to a pointer)
 					#ifdef DEBUG
 					} catch (bad_alloc& ba) {
 						cerr << "error: (new cluster_member_list) bad_alloc caught: " << ba.what() << endl;
 						exit(1);
 					}
-					#endif
-				}
-				
-				mymemberlist->append(read_id, max_cluster_offsets[0]);
-				
-				
-				// find old consensus sequence
-				#ifdef DEBUG
-				string * consensus_old;
-				try {
-				consensus_old = cluster_consensus_sequences->at(clusterhit);
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(consensus_old = cluster_consensus_sequences->at(clusterhit)) " << oor.what() << endl;
-					exit(1);
-				}
-				#else
-				string * consensus_old = (*cluster_consensus_sequences)[clusterhit];
-				#endif				
-				if (consensus_old == NULL) {
-					// consensus seuquence does not exist yet, seed member had been used
-					int seed_id = mymemberlist->start->data_array1[0];
+					#endif	
+					cluster_member_lists->unset_writer_lock();
+					mymemberlist->append(read_id, 0); // cluster lock is enough
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					
+					
+					addConsensusSequence(sequence, new_cluster, cluster_kmer_hash);
+					
 					#ifdef DEBUG
+					// see if new sequence has been added correctly
+					if ( omp_test_lock(my_cluster_lock) ) {
+						cerr << "omp_test_lock: 1" << endl;
+						exit(1);
+					}
+					
+					testConsensusSequence(sequence, new_cluster, cluster_kmer_hash, 7);
+					#endif
+					
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					//omp_unset_lock(my_cluster_lock);
+					
+					//#pragma omp flush
+					
+					break; // end of cluster creation
+					
+				} else if (validated_overlaps == 1) { // read has match to exactly one cluster
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					int clusterhit = max_cluster_id_array[0];
+					
+					// how can I be sure cluster still exists ?
+					// if  cluster does not exist anymore, there will be no wrong cluster instead, just empty.
+					
+					// lock the thing (lock exists!), check if it exists, if not fall back..
+					
+					omp_lock_t * my_cluster_lock = &(*cluster_locks)[clusterhit];
+//#pragma omp critical(cerr)
+					//{
+					//cerr << "thread: " << this_thread_id << " clusterlock: " << clusterhit << endl;
+					//}
+					
+					ScopedLock lalala(my_cluster_lock);
+					
+					#ifdef DEBUG
+					if ( omp_test_lock(my_cluster_lock) ) {
+						cerr << "omp_test_lock: 5" << endl;
+						exit(1);
+					}
+					#endif
+					//#pragma omp flush
+					
+					//omp_set_lock(my_cluster_lock);
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					//check if cluster exists...
+					
+					cluster_member_lists->set_reader_lock();
+					
+					if ((*cluster_member_lists)[clusterhit] == NULL ) {
+						// cluster does not exist anymore!
+						validated_overlaps = 0; // fall-back.
+						repeat_loop = true;
+						cluster_member_lists->unset_reader_lock();
+						//omp_unset_lock(my_cluster_lock);
+						break; // break the while(1) loop
+					}
+					
+					// get member list of cluster to add new member
+					#ifdef DEBUG
+					
+					cluster_member_list * templist; // already locked
 					try {
-					consensus_old = inputSequences->at(seed_id).second;
+						templist = cluster_member_lists->at(clusterhit);
 					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(consensus_old = inputSequences->at(seed_id).second) " << oor.what() << endl;
+						cerr << "Out of Range error:(templist = cluster_member_lists->at(clusterhit)) " << oor.what() << endl;
+						exit(1);
+					}
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					
+					cluster_member_list*& mymemberlist = cluster_member_lists->at(clusterhit);
+					#else
+					cluster_member_list*& mymemberlist = (*cluster_member_lists)[clusterhit]; // alias to a pointer
+					#endif	
+					cluster_member_lists->unset_reader_lock();
+					
+					if (mymemberlist == NULL){ // in case cluster had size one, I think
+						#ifdef DEBUG
+						try {
+						#endif
+							cluster_member_lists->set_writer_lock();
+							mymemberlist = new cluster_member_list();
+							cluster_member_lists->unset_writer_lock();
+						#ifdef DEBUG
+						} catch (bad_alloc& ba) {
+							cerr << "error: (new cluster_member_list) bad_alloc caught: " << ba.what() << endl;
+							exit(1);
+						}
+						#endif
+					}
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					
+					
+					
+					// find old consensus sequence (read or real consensus)
+					cluster_consensus_sequences->set_reader_lock();
+					#ifdef DEBUG
+					mystring * consensus_old;
+					try {
+					consensus_old = cluster_consensus_sequences->at(clusterhit);
+					} catch (out_of_range& oor) {
+						cerr << "Out of Range error:(consensus_old = cluster_consensus_sequences->at(clusterhit)) " << oor.what() << endl;
 						exit(1);
 					}
 					#else
-					consensus_old = new string((*inputSequences)[seed_id].second.c_str());
-					#endif
-				}
-				
-				
-				
-				// check if new member is a perfect full-length overlap
-				bool extends_consensus = true;
-				
-				#ifdef DEBUG
-				int member_len;
-				try {
-				member_len = inputSequences->at(read_id).second->length();
-				} catch (out_of_range& oor) {
-					cerr << "Out of Range error:(member_len = inputSequences->at(read_id).second->length()) " << oor.what() << endl;
-					exit(1);
-				}
-				#else
-				int member_len = (*inputSequences)[read_id].second.length();
-				#endif					
-				//bool perfect_overlap = false;
-				if (max_cluster_offsets[0] >= 0 && max_cluster_offsets[0]+member_len <= consensus_old->length() ) { // check for full-length overlap
-					extends_consensus = false;
-				} 
-				
-				
-				int membercount = mymemberlist->getLength();
-				//cout << "membercount: " << membercount << endl;
-				
-				
-				if (clusterNeedsUpdate(membercount) || extends_consensus) { // mymemberlist->getLength() >= 100
-				//if (true) {	
+					mystring * consensus_old = (*cluster_consensus_sequences)[clusterhit];
+					#endif	
+					cluster_consensus_sequences->unset_reader_lock();
 					
 					
 					
-					// ============ REMOVE OLD CONSENSUS K-MERS =============
+					mymemberlist->append(read_id, max_cluster_offsets[0]); // locked by cluster lock
 					
+		
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 					
-					
-					
-					// remove consensus sequence kmers for cluster "clusterhit"
-					removeConsensusSequences(consensus_old, clusterhit, cluster_kmer_hash);
-					
-					
-					// delete old consensus, but not seed !
-					
-					#ifdef DEBUG
-					string * tempstr;
-					try {
-					tempstr = cluster_consensus_sequences->at(clusterhit);
-					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(tempstr = cluster_consensus_sequences->at(clusterhit)) " << oor.what() << endl;
-						exit(1);
-					}
-					if (tempstr != NULL) {
-						delete consensus_old;
-						cluster_consensus_sequences->at(clusterhit) = NULL;
-					}
-					#else					
-					if ((*cluster_consensus_sequences)[clusterhit] != NULL) {
-						delete consensus_old;
-						(*cluster_consensus_sequences)[clusterhit] = NULL;
-					}
-					#endif					
-					//consensus_old = NULL;					
-					
-					
-					// ============= SORT, UPDATE OFFSETS AND COMPUTE CONSENSUS ==============
-					// copy members from list to array (temporarly)
-					
-					string * new_consensus_seq = computeConsensus(mymemberlist,  
-																  inputSequences, 
-																  alignment_column,
-																  aminoacid_occurence,
-																  aminoacid_scores,
-																  score_matrix);
-					#ifdef DEBUG
-					try {
-					cluster_consensus_sequences->at(clusterhit) = new_consensus_seq;
-					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(cluster_consensus_sequences->at(clusterhit) = new_consensus_seq) " << oor.what() << endl;
-						exit(1);
-					}
-					#else
-					(*cluster_consensus_sequences)[clusterhit] = new_consensus_seq;
-					#endif
-					//cout << "write " << new_consensus_seq << " at " << clusterhit << endl;
-					//cluster_consensus_sequences->
-					
-					//cout <<"con: " << *new_consensus_seq << endl;
-					
-					
-					
-					
-					// insert kmers of new_consensus_seq into hash
-					
-					addConsensusSequence(new_consensus_seq->c_str(), new_consensus_seq->length(), clusterhit, cluster_kmer_hash);
-					
-					
-					
-				}
-				break;
-				
-			} else { //if (validated_overlaps >= 2) {
-				
-				//cout << "validated_overlaps >= 2 !!!!!!!!" << endl;
-				
-				
-				//cout << "read_id: " << read_id << endl;
-				//for (int i = 0; i < validated_overlaps; ++i) {
-					
-				//	cout << i << "))) " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
-				//	cout << "offset: " << max_cluster_offsets[i] << endl;
-				//}
-				
-				
-				
-				validated_overlaps=2; // sorry....
-				
-				
-				int previous_master_cluster_index = 0;
-				// merge clusters iteratively
-				//for (int second_cluster_index = 1; second_cluster_index < validated_overlaps; ++second_cluster_index) {
-				int second_cluster_index = 1;
-					
-				// Cluster 1
-				int cluster_1 = max_cluster_id_array[previous_master_cluster_index];
-				cluster_member_list * cluster_1_memberlist = (*cluster_member_lists)[cluster_1];
-				string * consensus_1 = (*cluster_consensus_sequences)[cluster_1];
-				
-				if (consensus_1 == NULL) {
-					int cluster_read = cluster_1_memberlist->start->data_array1[0];
-//					#ifdef DEBUG
-//					consensus_1 = inputSequences->at(cluster_read).second;
-//					#else
-//					consensus_1 = (*inputSequences)[cluster_read].second;
-//					#endif
-					consensus_1 = new string((*inputSequences)[cluster_read].second.c_str());
-				}
-				
-				// Cluster 2
-				int cluster_2 = max_cluster_id_array[second_cluster_index];
-				cluster_member_list * cluster_2_memberlist = (*cluster_member_lists)[cluster_2];
-				string * consensus_2 = (*cluster_consensus_sequences)[cluster_2];
-				
-				
-				if (consensus_2 == NULL) {
-					int cluster_read = cluster_2_memberlist->start->data_array1[0];
-//					#ifdef DEBUG
-//					consensus_2 = inputSequences->at(cluster_read).second;
-//					#else
-//					consensus_2 = (*inputSequences)[cluster_read].second;
-//					#endif
-					consensus_2 = new string((*inputSequences)[cluster_read].second.c_str());
-				}
-				
-				//cout << cluster_1 << endl;
-				//cout << cluster_2 << endl;
-				
-				//cout << max_cluster_offsets[previous_master_cluster_index] << endl;
-				//cout << max_cluster_offsets[second_cluster_index] << endl;
-				
-				int offset_diff = max_cluster_offsets[previous_master_cluster_index] - max_cluster_offsets[second_cluster_index];
-				//cout << "seq: " << *sequence << endl;
-				//cout << "o: " << offset_diff << endl;
-				
-				
-				
-				bool has_overlap = computeSequenceOverlap(offset_diff, consensus_1, consensus_2, score_matrix, 0);
-				
-				//cout << (has_overlap?string("true"):string("false")) << endl;
-				
-				if (! has_overlap) {
-					// in this case we fall back to the simple procedure of adding one read to one cluster
-					validated_overlaps = 1;
-					
-				} else {
-				
-					
-					
-										
-					
-					//cout << cluster_1_memberlist->getLength() << endl;
-					//cout << cluster_2_memberlist->getLength() << endl;
-					
-					//cout << *consensus_1 << endl;
-					//cout << *consensus_2 << endl;
-					//exit(0);
-					
-					int newread_offset;
-					
-					
-					int slave_offset;
-					
-					int master_cluster_index;
-					int slave_cluster_index;
-					
-					int master_cluster;
-					int slave_cluster;
-					
-					cluster_member_list * master_cluster_member_list;
-					cluster_member_list * slave_cluster_member_list;
-					
-					//string * master_consensus_sequence;
-					//string * slave_consensus_sequence;
-					//cout << "B" << endl;
-					if (max_cluster_offsets[previous_master_cluster_index] >= max_cluster_offsets[second_cluster_index]) {
-						// first sequence is left of second sequence
+					if (consensus_old == NULL) {
 						
-						master_cluster_index = previous_master_cluster_index;
-						slave_cluster_index = second_cluster_index;
+						// consensus seuquence does not exist yet, seed member had been used
 						
-						master_cluster_member_list = (*cluster_member_lists)[cluster_1];
-						slave_cluster_member_list = (*cluster_member_lists)[cluster_2];
+						int seed_id = mymemberlist->start->data_array1[0];
 						
+						#ifdef DEBUG
+					//ugga = 9;
+						try {
+						consensus_old = &(inputSequences->at(seed_id).second);
+						} catch (out_of_range& oor) {
+							cerr << "Out of Range error:(consensus_old = inputSequences->at(seed_id).second) " << oor.what() << endl;
+							exit(1);
+						}
+						#else
+						consensus_old = &((*inputSequences)[seed_id].second);
+						#endif
 						
+						//#ifdef DEBUG
+						//if (consensus_old->data == NULL) {
+						//	cerr << "2consensus_old->data == NULL" << endl;
+						//	exit(1);
+						//}
+						//#endif
 					} else {
+						//#ifdef DEBUG
+						//if (consensus_old->data == NULL) {
+						//	cerr << "1consensus_old->data == NULL" << endl;
+						//	exit(1);
+						//}
+						//#endif
+					}
+					
+#ifdef DEBUG
+					// see if old sequence had been added correctly
+					if ( omp_test_lock(my_cluster_lock) ) {
+						cerr << "omp_test_lock: 2" << endl;
+						exit(1);
+					}
+				//	testConsensusSequence(consensus_old, clusterhit, cluster_kmer_hash, ugga);
+#endif
+				
+					
+					// check if new member is a perfect full-length overlap
+					bool extends_consensus = true;
+					
+					
+					
+					int member_len = sequence->length();
+								
+					//bool perfect_overlap = false;
+					if (max_cluster_offsets[0] >= 0 && max_cluster_offsets[0]+member_len <= (int) consensus_old->length() ) { // check for full-length overlap
+						extends_consensus = false;
+					} 
+					
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					int membercount = mymemberlist->getLength();
+					//cout << "membercount: " << membercount << endl;
+					
+					
+					if (clusterNeedsUpdate(membercount) || extends_consensus) { // mymemberlist->getLength() >= 100
+					//if (true) {
 						
-						master_cluster_index =  second_cluster_index;
-						slave_cluster_index = previous_master_cluster_index;
+						// ============ REMOVE OLD CONSENSUS K-MERS =============
 						
-						master_cluster_member_list = (*cluster_member_lists)[cluster_2];
-						slave_cluster_member_list = (*cluster_member_lists)[cluster_1];
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						// remove consensus sequence kmers for cluster "clusterhit"
+						removeConsensusSequence(consensus_old, clusterhit, cluster_kmer_hash);
+						
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						// delete old consensus, but not seed !
+						
+						cluster_consensus_sequences->set_writer_lock();
+						#ifdef DEBUG
+						mystring * tempstr;
+						try {
+						tempstr = cluster_consensus_sequences->at(clusterhit);
+						} catch (out_of_range& oor) {
+							cerr << "Out of Range error:(tempstr = cluster_consensus_sequences->at(clusterhit)) " << oor.what() << endl;
+							exit(1);
+						}
+						if (tempstr != NULL) {
+							consensus_old->delete_data();
+							delete consensus_old;
+							cluster_consensus_sequences->at(clusterhit) = NULL;
+						}
+						#else					
+						if ((*cluster_consensus_sequences)[clusterhit] != NULL) {
+							consensus_old->delete_data();
+							delete consensus_old;
+							(*cluster_consensus_sequences)[clusterhit] = NULL;
+						}
+						#endif
+						cluster_consensus_sequences->unset_writer_lock();
+						//consensus_old = NULL;
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						
+						// ============= SORT, UPDATE OFFSETS AND COMPUTE CONSENSUS ==============
+						// copy members from list to array (temporarly)
+						
+						mystring * new_consensus_seq = computeConsensus(mymemberlist,  // locked by cluster lock
+																	  inputSequences, 
+																	  alignment_column,
+																	  aminoacid_occurence,
+																	  aminoacid_scores,
+																	  score_matrix,
+																	  cluster_aminoacid_counts	);
+						cluster_consensus_sequences->set_writer_lock();
+						#ifdef DEBUG
+						try {
+						cluster_consensus_sequences->at(clusterhit) = new_consensus_seq;
+						} catch (out_of_range& oor) {
+							cerr << "Out of Range error:(cluster_consensus_sequences->at(clusterhit) = new_consensus_seq) " << oor.what() << endl;
+							exit(1);
+						}
+						#else
+						(*cluster_consensus_sequences)[clusterhit] = new_consensus_seq;
+						#endif
+						cluster_consensus_sequences->unset_writer_lock();
+
+						
+						
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						
+						// insert kmers of new_consensus_seq into hash
+						
+						addConsensusSequence(new_consensus_seq, clusterhit, cluster_kmer_hash);
+						
+#ifdef DEBUG
+						if ( omp_test_lock(my_cluster_lock) ) {
+							cerr << "omp_test_lock: 3" << endl;
+							exit(1);
+						}
+						// see if old sequence has been added correctly
+						testConsensusSequence(new_consensus_seq, clusterhit, cluster_kmer_hash, 50);
+#endif
 						
 					}
 					
-					master_cluster = max_cluster_id_array[master_cluster_index];
-					slave_cluster = max_cluster_id_array[slave_cluster_index];
-					
-					//master_consensus_sequence = consensus_2;
-					//slave_consensus_sequence = consensus_1;
-					
-					slave_offset = max_cluster_offsets[master_cluster_index] - max_cluster_offsets[slave_cluster_index];
-					newread_offset = max_cluster_offsets[master_cluster_index];
-					
-					//cout << "C" << endl;
-					
-					// update and copy slave members to master
-					
-					slave_cluster_member_list->resetIterator();
-					while (slave_cluster_member_list->nextElement()) {
-						master_cluster_member_list->append(slave_cluster_member_list->getFirst(), slave_cluster_member_list->getSecond() + slave_offset);
-					}
-					
-					// append current read as member:
-					master_cluster_member_list->append(read_id, newread_offset);
-					
-					// delete stuff
-					delete slave_cluster_member_list;
-					(*cluster_member_lists)[slave_cluster] = NULL;
-					
-					removeConsensusSequences(consensus_1, cluster_1, cluster_kmer_hash);
-					removeConsensusSequences(consensus_2, cluster_2, cluster_kmer_hash);
+					//omp_unset_lock(my_cluster_lock);
+					//#pragma omp flush
 					
 					
+					break;
+					
+				} else { //if (validated_overlaps >= 2) {
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					//cout << "validated_overlaps >= 2 !!!!!!!!" << endl;
 					
 					
-//					if ( (*cluster_consensus_sequences)[ cluster_1] != NULL ) {
-//						delete (*cluster_consensus_sequences)[ cluster_1];
-//						(*cluster_consensus_sequences)[ cluster_1] = NULL;
-//						
-//					}
-//					if ( (*cluster_consensus_sequences)[ cluster_2] != NULL ) {
-//						delete (*cluster_consensus_sequences)[ cluster_2];
-//						(*cluster_consensus_sequences)[ cluster_2] = NULL;
-//						
-//					}
-					
-					// since both are copies, I can delete now both:
-					delete consensus_1;
-					delete consensus_2;
-					(*cluster_consensus_sequences)[ cluster_1] = NULL;
-					(*cluster_consensus_sequences)[ cluster_2] = NULL;
-					
-					// visualize cluster:
-					//master_cluster_member_list->resetIterator();
-					//while(master_cluster_member_list->nextElement()) {
-					//	string * tempseq = ((*inputSequences)[master_cluster_member_list->getFirst()].second);
-					//	cout << string(master_cluster_member_list->getSecond()+20, '_') << *tempseq << endl;
+					//cout << "read_id: " << read_id << endl;
+					//for (int i = 0; i < validated_overlaps; ++i) {
+						
+					//	cout << i << "))) " << max_cluster_kmer_count_array[i] << " " << max_cluster_id_array[i] << endl;
+					//	cout << "offset: " << max_cluster_offsets[i] << endl;
 					//}
 					
 					
-					// create new consensus:
+					
+					validated_overlaps=2; // sorry....
 					
 					
-					string * new_consensus_seq = computeConsensus(master_cluster_member_list,  
-																  inputSequences, 
-																  alignment_column,
-																  aminoacid_occurence,
-																  aminoacid_scores,
-																  score_matrix);
-					//cout << "D3" << endl;
-					assert( (*cluster_consensus_sequences)[master_cluster]==NULL );
+					int previous_master_cluster_index = 0;
+					// merge clusters iteratively
+					//for (int second_cluster_index = 1; second_cluster_index < validated_overlaps; ++second_cluster_index) {
+					int second_cluster_index = 1;
+						
 					
-					#ifdef DEBUG
-					try {
-					cluster_consensus_sequences->at(master_cluster) = new_consensus_seq;
-					} catch (out_of_range& oor) {
-						cerr << "Out of Range error:(cluster_consensus_sequences->at(master_cluster) = new_consensus_seq) " << oor.what() << endl;
-						exit(1);
-					}	
-					#else
-					(*cluster_consensus_sequences)[master_cluster] = new_consensus_seq;
-					#endif
-					//cout << "write2 " << new_consensus_seq << " at " << master_cluster << endl;
-					//cout <<"merged con: " << *new_consensus_seq << endl;
-					//exit(0);
-					//cout << "E" << endl;
+					int cluster_1 = max_cluster_id_array[previous_master_cluster_index];
+					int cluster_2 = max_cluster_id_array[second_cluster_index];
 					
 					
-					// insert kmers of new_consensus_seq into hash
+					// try to lock both clusters
+					omp_lock_t * my_cluster_lock_1;
+					omp_lock_t * my_cluster_lock_2;
 					
-					addConsensusSequence(new_consensus_seq->c_str(), new_consensus_seq->length(), master_cluster, cluster_kmer_hash);
+					if (cluster_1 < cluster_2) { // this should help avoiding deadlock !
+						my_cluster_lock_1 = &(*cluster_locks)[cluster_1];
+						my_cluster_lock_2 = &(*cluster_locks)[cluster_2];
+					} else {
+						my_cluster_lock_1 = &(*cluster_locks)[cluster_2];
+						my_cluster_lock_2 = &(*cluster_locks)[cluster_1];
+					}
 					
-					previous_master_cluster_index = master_cluster_index;
-					stat_real_cluster_count--;
 					
-					break;				
-				}
-				
-				
-				
-				
-				
-				
-				//cout << "leave merge process " << endl;
-				//exit(0);
-			} 		
-			
-			
-		  
-		} // end while true	
-		
-		#ifdef TIME
-		//overlap_end=clock();
-		//overlap_total = overlap_end - overlap_start;
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &overlap_end);
-		overlap_total = add_time( overlap_total, diff(overlap_start, overlap_end));
-		#endif
-		
-		if ((read_id +1) % 10000 == 0 && read_id > 0) {
-			//cerr << "count: " << read_id << endl;
-				
-			time(&end);
+					//omp_set_lock(my_cluster_lock_1);
+					//omp_set_lock(my_cluster_lock_2);
+//#pragma omp critical(cerr)
+//					{
+//						cerr << "thread: " << this_thread_id << " clusterlock: " << cluster_1  << " " << cluster_2 << endl;
+//					}
 					
-			
-			log_stream << read_id+1 << "\t" << stat_real_cluster_count ;
-			
-			log_stream << "\t" << difftime(end, begin);
-			
-			
-			if ((read_id +1) % 500000 == 0 && read_id > 0) {
-				double vm, rss;
-				process_mem_usage(vm, rss);
-				log_stream << "\t" << (int)vm << "\t" << (int)rss;
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					ScopedLock lalala1(my_cluster_lock_1);
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					ScopedLock lalala2(my_cluster_lock_2);
+					//#pragma omp flush
+					
+					
 
-				 
-			} else {
-				log_stream << "\t-\t-";
-			}
+					
+					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+					// get their member lists:
+					cluster_member_lists->set_reader_lock();
+					cluster_member_list * cluster_1_memberlist = (*cluster_member_lists)[cluster_1];
+					cluster_member_list * cluster_2_memberlist = (*cluster_member_lists)[cluster_2];
+					
+
+					// check if the clusters actually still exist
+					if (cluster_1_memberlist == NULL ||  cluster_2_memberlist == NULL) {
+						// cluster does not exist anymore!
+						validated_overlaps = 1; // fall-back. 
+						repeat_loop = true;
+						cluster_member_lists->unset_reader_lock();
+						//omp_unset_lock(my_cluster_lock_1);
+						//omp_unset_lock(my_cluster_lock_2);
+						break;
+					}
+					cluster_member_lists->unset_reader_lock();
+					
+					// get consensus sequences
+					cluster_consensus_sequences->set_reader_lock();
+					mystring * consensus_1 = (*cluster_consensus_sequences)[cluster_1];
+					mystring * consensus_2 = (*cluster_consensus_sequences)[cluster_2];
+					cluster_consensus_sequences->unset_reader_lock();
+					
+					bool consensus_1_isread = false;
+					bool consensus_2_isread = false;
+					
+					if (consensus_1 == NULL) {
+						consensus_1_isread = true;
+						int cluster_read = cluster_1_memberlist->start->data_array1[0];
+						
+	//					#ifdef DEBUG
+	//					consensus_1 = inputSequences->at(cluster_read).second;
+	//					#else
+	//					consensus_1 = (*inputSequences)[cluster_read].second;
+	//					#endif
+						consensus_1 = &(*inputSequences)[cluster_read].second;
+					}
+										
+					if (consensus_2 == NULL) {
+						consensus_2_isread = true;
+						int cluster_read = cluster_2_memberlist->start->data_array1[0];
+						
+	//					#ifdef DEBUG
+	//					consensus_2 = inputSequences->at(cluster_read).second;
+	//					#else
+	//					consensus_2 = (*inputSequences)[cluster_read].second;
+	//					#endif
+						consensus_2 = &(*inputSequences)[cluster_read].second;
+					}
+
+#ifdef DEBUG
+					// see if old sequence has been added correctly
+					testConsensusSequence(consensus_1, cluster_1, cluster_kmer_hash, 51);
+					testConsensusSequence(consensus_2, cluster_2, cluster_kmer_hash, 52);
+#endif
+					
+					//cout << cluster_1 << endl;
+					//cout << cluster_2 << endl;
+					
+					//cout << max_cluster_offsets[previous_master_cluster_index] << endl;
+					//cout << max_cluster_offsets[second_cluster_index] << endl;
+					
+					int offset_diff = max_cluster_offsets[previous_master_cluster_index] - max_cluster_offsets[second_cluster_index];
+					//cout << "seq: " << *sequence << endl;
+					//cout << "o: " << offset_diff << endl;
+					
+					//cout << consensus_1->c_str() << endl;
+					//cout << consensus_2->c_str() << endl;
+					bool has_overlap = computeSequenceOverlap(offset_diff, consensus_1, consensus_2, score_matrix, 0);
+					
+					//cout << (has_overlap?string("true"):string("false")) << endl;
+					
+					if ( has_overlap) {
+					
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						//cout << cluster_1_memberlist->getLength() << endl;
+						//cout << cluster_2_memberlist->getLength() << endl;
+						
+						//cout << *consensus_1 << endl;
+						//cout << *consensus_2 << endl;
+						//exit(0);
+						
+						int newread_offset;
+						
+						
+						int slave_offset;
+						
+						int master_cluster_index;
+						int slave_cluster_index;
+						
+						int master_cluster;
+						int slave_cluster;
+						
+						cluster_member_list * master_cluster_member_list;
+						cluster_member_list * slave_cluster_member_list;
+						
+						//string * master_consensus_sequence;
+						//string * slave_consensus_sequence;
+						//cout << "B" << endl;
+						
+						
+						if (max_cluster_offsets[previous_master_cluster_index] >= max_cluster_offsets[second_cluster_index]) {
+							// first sequence is left of second sequence
+							
+							master_cluster_index = previous_master_cluster_index;
+							slave_cluster_index = second_cluster_index;
+							
+							cluster_member_lists->set_reader_lock();
+							master_cluster_member_list = (*cluster_member_lists)[cluster_1];
+							slave_cluster_member_list = (*cluster_member_lists)[cluster_2];
+							cluster_member_lists->unset_reader_lock();
+							
+						} else {
+							
+							master_cluster_index =  second_cluster_index;
+							slave_cluster_index = previous_master_cluster_index;
+							
+							cluster_member_lists->set_reader_lock();
+							master_cluster_member_list = (*cluster_member_lists)[cluster_2];
+							slave_cluster_member_list = (*cluster_member_lists)[cluster_1];
+							cluster_member_lists->unset_reader_lock();
+						}
+						
+						master_cluster = max_cluster_id_array[master_cluster_index];
+						slave_cluster = max_cluster_id_array[slave_cluster_index];
+						
+						//master_consensus_sequence = consensus_2;
+						//slave_consensus_sequence = consensus_1;
+						
+						slave_offset = max_cluster_offsets[master_cluster_index] - max_cluster_offsets[slave_cluster_index];
+						newread_offset = max_cluster_offsets[master_cluster_index];
+						
+						//cout << "C" << endl;
+						
+						// update and copy slave members to master
+						
+						//slave_cluster_member_list->resetIterator();
+						cluster_member_list::iterator mylist_it;
+						
+						//while (slave_cluster_member_list->nextElement()) {
+						
+						
+						for (mylist_it = slave_cluster_member_list->begin(); mylist_it != slave_cluster_member_list->end(); ++mylist_it) {
+							master_cluster_member_list->append(mylist_it.getFirst(), mylist_it.getSecond() + slave_offset); // protected by cluster lock
+						}
+						
+						
+						
+						// append current read as member:
+						master_cluster_member_list->append(read_id, newread_offset); // protected by cluster lock
+						
+						// delete stuff
+						delete slave_cluster_member_list;
+						cluster_member_lists->set_writer_lock();
+						(*cluster_member_lists)[slave_cluster] = NULL;
+						cluster_member_lists->unset_writer_lock();
+						
+						removeConsensusSequence(consensus_1, cluster_1, cluster_kmer_hash);
+						removeConsensusSequence(consensus_2, cluster_2, cluster_kmer_hash);
+						
+						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
+						
+	//					if ( (*cluster_consensus_sequences)[ cluster_1] != NULL ) {
+	//						delete (*cluster_consensus_sequences)[ cluster_1];
+	//						(*cluster_consensus_sequences)[ cluster_1] = NULL;
+	//						
+	//					}
+	//					if ( (*cluster_consensus_sequences)[ cluster_2] != NULL ) {
+	//						delete (*cluster_consensus_sequences)[ cluster_2];
+	//						(*cluster_consensus_sequences)[ cluster_2] = NULL;
+	//						
+	//					}
+						
+						//  I can delete now both: (either old consensus, or copy of input read)
+						if (not consensus_1_isread) {
+							consensus_1->delete_data();
+							delete consensus_1;
+						}
+						if (not consensus_2_isread) {
+							consensus_2->delete_data();
+							delete consensus_2;
+						}
+						cluster_consensus_sequences->set_writer_lock();
+						(*cluster_consensus_sequences)[ cluster_1] = NULL;
+						(*cluster_consensus_sequences)[ cluster_2] = NULL;
+						cluster_consensus_sequences->unset_writer_lock();
+						// visualize cluster:
+						//master_cluster_member_list->resetIterator();
+						//while(master_cluster_member_list->nextElement()) {
+						//	string * tempseq = ((*inputSequences)[master_cluster_member_list->getFirst()].second);
+						//	cout << string(master_cluster_member_list->getSecond()+20, '_') << *tempseq << endl;
+						//}
+						
+						
+						// create new consensus:
+						
+						
+						mystring * new_consensus_seq = computeConsensus(master_cluster_member_list,
+																	  inputSequences, 
+																	  alignment_column,
+																	  aminoacid_occurence,
+																	  aminoacid_scores,
+																	  score_matrix,
+																	  cluster_aminoacid_counts);
+						//cout << "D3" << endl;
+						
+						cluster_consensus_sequences->set_writer_lock();
+						#ifdef DEBUG
+						
+						
+						assert( (*cluster_consensus_sequences)[master_cluster]==NULL );
+						
+						
+						try {
+						cluster_consensus_sequences->at(master_cluster) = new_consensus_seq;
+						} catch (out_of_range& oor) {
+							cerr << "Out of Range error:(cluster_consensus_sequences->at(master_cluster) = new_consensus_seq) " << oor.what() << endl;
+							exit(1);
+						}	
+						#else
+						(*cluster_consensus_sequences)[master_cluster] = new_consensus_seq;
+						#endif
+						cluster_consensus_sequences->unset_writer_lock();
+						//cout << "write2 " << new_consensus_seq << " at " << master_cluster << endl;
+						//cout <<"merged con: " << *new_consensus_seq << endl;
+						//exit(0);
+						//cout << "E" << endl;
+						
+						
+						// insert kmers of new_consensus_seq into hash
+						
+						addConsensusSequence(new_consensus_seq, master_cluster, cluster_kmer_hash);
+						
+						
+#ifdef DEBUG
+						// see if old sequence has been added correctly
+						testConsensusSequence(new_consensus_seq, master_cluster, cluster_kmer_hash, 54);
+						
+#endif
+						
+						previous_master_cluster_index = master_cluster_index;
+						#pragma omp atomic
+						stat_real_cluster_count--;
+		
+						//#pragma omp flush
+						
+					} // end if ( has_overlap)
+							
+					//omp_unset_lock(my_cluster_lock_1);
+					//omp_unset_lock(my_cluster_lock_2);
+					
+					if ( not has_overlap) {
+						// did not have real overlap, try with single merging
+						validated_overlaps = 1;
+						continue;
+					}
+					
+					break; // end of cluster merging 
+					
+				} // end if validated_overlaps
+				
+				break; // leave while(1) loop
 			
-			log_stream << endl;
-			flush(log_stream);
-		}
+			} // end while(1)
+			
+			if (repeat_loop) {
+				read_id--;
+			} 			
+			
+			
+			
+		} // end internal for-loop for input reads
+
+			size_t this_chunk_size = last_read_id - first_read_id +1;
+			
+			#pragma omp atomic
+			reads_processed+=this_chunk_size;
+			
+			if(this_thread_id == 0)
+			{
+				//printThreadStatus();
+#ifdef TIME
+				//overlap_end=clock();
+				//overlap_total = overlap_end - overlap_start;
+				clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &overlap_end);
+				overlap_total = add_time( overlap_total, diff(overlap_start, overlap_end));
+#endif
+				
+				//if (reads_processed % 10000 == 0 && reads_processed > 0) {
+					//cerr << "count: " << read_id << endl;
+					
+					time(&end);
+				
+					// for more accurate read counts
+					size_t report_reads_processed = reads_processed;
+					for (int tt = 1; tt < thread_count; ++tt) { // can skip tt=0, since this is always zero.
+						report_reads_processed += partial_read_count[tt];
+					}
+					
+				
+#pragma omp flush(stat_real_cluster_count)
+					log_stream << report_reads_processed << "\t" << stat_real_cluster_count ;
+					
+					log_stream << "\t" << difftime(end, begin);
+					
+					
+					if (true) { //TODO
+						double vm, rss;
+						process_mem_usage(vm, rss);
+						log_stream << "\t" << (int)vm << "\t" << (int)rss;
+						
+						
+					} else {
+						log_stream << "\t-\t-";
+					}
+					
+					log_stream << endl;
+					flush(log_stream);
+				//}
+			}
+
+		} // end while(1) for read chunks
+		// this thread has finished his task
+		
+		
+		
+		
+		
 		//if ((read_id >= limit_input_reads) && (limit_input_reads != -1)) {
 		//	break;
 		//}
+		
+		
+		// CLEAN UP PRIVATE STUFF
+		
+		delete countOfOverlappingKmers;
+		delete lastreadseen;
+		
+		delete vector_of_offsets;
+		delete alignment_column;
+		delete aminoacid_occurence;
+		delete aminoacid_scores;
+			
+			
+		for (int i = 0 ; i <max_protein_length ; ++i ) {
+			delete [] cluster_aminoacid_counts[i];
+		}
+		delete [] cluster_aminoacid_counts;
+	
+			
+		
+	} // end of parallelization #########################
+	
+	
+	if ((int) reads_processed != (int) sequence_count) {
+		cerr << "error: reads_processed != sequence_count" << endl;
+		cerr << reads_processed << endl;
+		cerr << sequence_count << endl;
+		exit(1);
 	}
 	
-	if (sequence_count % 10000 != 0 && sequence_count > 0) {
+	if (reads_processed % 10000 != 0 && reads_processed > 0) {
 		//cerr << "count: " << read_id << endl;
 				
 		time(&end);
-		
-		log_stream << sequence_count << "\t" << stat_real_cluster_count ;
+		#pragma omp flush(stat_real_cluster_count)
+		log_stream << reads_processed << "\t" << stat_real_cluster_count ;
 		
 		log_stream << "\t" << difftime(end, begin);
 		
@@ -2403,7 +3032,39 @@ void Clustgun::cluster(string inputfile) {
 	//cout << "------------- "<< " X2 " << *(inputSequences->at(0).second) << endl;
 	
 	
+	
+	vector<short> * vector_of_offsets;
+	vector<char> * alignment_column;
+	vector<bool> * aminoacid_occurence;
+	vector<int> * aminoacid_scores;
+	
+	vector_of_offsets = new vector<short>();
+	vector_of_offsets->resize(max_protein_length);
+	
+	alignment_column = new vector<char>();
+	alignment_column->resize(1000000);
+	
+	aminoacid_occurence = new vector<bool>(aminoacid_count, false);
+	
+	aminoacid_scores = new vector<int>(aminoacid_count, 0);
+	
+	
+	int** cluster_aminoacid_counts = new int* [max_protein_length];
+	
+	for (int i = 0 ; i <max_protein_length ; ++i ) {
+		
+		cluster_aminoacid_counts[i]=new int[aminoacid_count];
+		int * blabla = cluster_aminoacid_counts[i];
+		for (int j = 0; j < aminoacid_count ; ++j  ) {
+			blabla[j]=0;
+		}
+	}
+	
+	cluster_member_list::iterator mylist_it;
+	
 	for (int current_cluster = 0 ; current_cluster < totalclustercount; ++current_cluster){
+	
+		
 		if ((*cluster_member_lists)[current_cluster] != NULL) {
 			
 			// update consensus first:
@@ -2413,16 +3074,21 @@ void Clustgun::cluster(string inputfile) {
 			
 			
 			
-			string * consensus = (*cluster_consensus_sequences)[current_cluster];
+			mystring * consensus = (*cluster_consensus_sequences)[current_cluster];
+			
+			
+			
 			cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
+			
 			
 			bool consensus_is_read = false;
 			if (consensus == NULL) {
 				consensus_is_read = true;
 				// cluster of size 1 !
 				
+				// pointer to read
+				consensus = &(*inputSequences)[mymemberlist->start->data_array1[0]].second ;
 				
-				consensus = new string((*inputSequences)[mymemberlist->start->data_array1[0]].second.c_str()) ;
 			}
 				
 			#ifdef DEBUG
@@ -2434,16 +3100,18 @@ void Clustgun::cluster(string inputfile) {
 			#endif
 			
 			
-			//if (not clusterNeedsUpdate(mymemberlist->getLength()) ) {
-			if ( not consensus_is_read) {	
+			// update consensus a last time
+			if ( not consensus_is_read) {
+				consensus->delete_data();
 				delete consensus;
 				
-				consensus = computeConsensus(mymemberlist,  
+				consensus = computeConsensus(mymemberlist,
 											  inputSequences, 
 											  alignment_column,
 											  aminoacid_occurence,
 											  aminoacid_scores,
-											  score_matrix);
+											  score_matrix,
+											  cluster_aminoacid_counts);
 				
 				
 				(*cluster_consensus_sequences)[current_cluster]= consensus;
@@ -2459,11 +3127,13 @@ void Clustgun::cluster(string inputfile) {
 				output_stream << " cov=";
 				
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-				mymemberlist->resetIterator();
+				//mymemberlist->resetIterator();
 				//bool start_loop = true;
 				int tot_len = 0;
-				while (mymemberlist->nextElement()) {
-					int seq_id = mymemberlist->getFirst();
+				
+				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
+				//while (mymemberlist->nextElement()) {
+					int seq_id = mylist_it.getFirst();
 					//short offset = mymemberlist->getSecond();
 					//cout << seq_id << endl;
 					//if (start_loop) {
@@ -2485,18 +3155,20 @@ void Clustgun::cluster(string inputfile) {
 			
 			
 			output_stream << endl; // end of fasta description line
-			output_stream << *consensus << endl; // protein sequence
+			output_stream << consensus->c_str() << endl; // protein sequence
 			
 			
 			if (list_all_members) {
 				list_stream << prefixname << current_cluster << " ";
 				
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-				mymemberlist->resetIterator();
+				//mymemberlist->resetIterator();
 				bool start_loop = true;
-				while (mymemberlist->nextElement()) {
-					int seq_id = mymemberlist->getFirst();
-					short offset = mymemberlist->getSecond();
+				//while (mymemberlist->nextElement()) {
+				
+				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {	
+					int seq_id = mylist_it.getFirst();
+					short offset = mylist_it.getSecond();
 					//cout << seq_id << endl;
 					if (start_loop) {
 						start_loop = false;
@@ -2517,25 +3189,32 @@ void Clustgun::cluster(string inputfile) {
 			//if (current_cluster == 0) {
 			if (false) {
 				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-				mymemberlist->resetIterator();
-				while(mymemberlist->nextElement()) {
-					string * tempseq = new string(((*inputSequences)[mymemberlist->getFirst()].second).c_str());
-					cout << string(mymemberlist->getSecond()+20, '_') << *tempseq << endl;
+				//mymemberlist->resetIterator();
+				//while(mymemberlist->nextElement()) {
+				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
+					mystring * tempseq = new mystring(((*inputSequences)[mylist_it.getFirst()].second).c_str());
+					cout << string(mylist_it.getSecond()+20, '_') << tempseq->c_str() << endl;
 					delete tempseq;
 				}
-				cout << *consensus << endl;
+				cout << consensus->c_str() << endl;
 				//exit(0);
 			}
 			
-			delete consensus;
+			
 			if (not consensus_is_read) {
+				consensus->delete_data();
+				delete consensus;
+				//cluster_consensus_sequences->set_writer_lock();
 				(*cluster_consensus_sequences)[current_cluster] = NULL;
+				//cluster_consensus_sequences->unset_writer_lock();
 			}
 			//cout << "> cluster" << current_cluster << endl;
 			//cout << *consensus << endl;
 		}
 		
 	}
+	
+	
 	//cout << "------------- "<< " X3 " << *(inputSequences->at(0).second) << endl;
 	output_stream.close();
 	if (list_all_members) {
@@ -2549,16 +3228,17 @@ void Clustgun::cluster(string inputfile) {
 	
 	// --- CLEAN UP STUFF --- (only to make valgrind happy)
 	
-	//cout << countOfOverlappingKmers->name << endl;
-	delete countOfOverlappingKmers;
-	//cout << lastreadseen->name << endl;
-	delete lastreadseen;
+	
+	
 	
 	//cout << cluster_consensus_sequences->name << endl;
 	cluster_consensus_sequences->deleteContentPointers();
 	//cout << "huhu" << endl;
 	delete cluster_consensus_sequences;
 	
+		
+	delete cluster_locks;
+		
 	//cout << cluster_member_lists->name << endl;
 	cluster_member_lists->deleteContentPointers();
 
@@ -2571,14 +3251,24 @@ void Clustgun::cluster(string inputfile) {
 	//cout << inputSequences->name << endl;
 	//inputSequences->deleteContentPairOfPointers();
 	delete inputSequences;
+	delete inputSequencesData;
 	
-	
-	for (cluster_kmer_hash_it = cluster_kmer_hash.begin(); cluster_kmer_hash_it != cluster_kmer_hash.end(); ++cluster_kmer_hash_it) {
+	for (int i = 0 ; i <max_protein_length ; ++i ) {
+			
+		delete [] cluster_aminoacid_counts[i];
+	}
+	delete [] cluster_aminoacid_counts;
+		
+	#ifndef USE_HashTableSimple
+	HashTable::iterator cluster_kmer_hash_it;
+	for (cluster_kmer_hash_it = cluster_kmer_hash->begin(); cluster_kmer_hash_it != cluster_kmer_hash->end(); ++cluster_kmer_hash_it) {
 		delete cluster_kmer_hash_it->second;
 		cluster_kmer_hash_it->second = NULL;
 	}
+	#endif
 	
-	
+	delete cluster_kmer_hash;
+		
 	delete [] score_matrix;
 	
 	
@@ -2596,6 +3286,7 @@ void Clustgun::cluster(string inputfile) {
 	log_stream << "total time in seconds: " << difftime(end, begin) << endl;
 	log_stream << "total time in hours: " << difftime(end, begin)/3600 << endl;
 	#ifdef TIME
+	
 	log_stream << "total time for kmer-iteration: (seconds:nanoseconds) " << kmersearch_total.tv_sec << ":" << kmersearch_total.tv_nsec << endl;
 	log_stream << "total time for validation: (seconds:nanoseconds)     " << validation_total.tv_sec << ":" << validation_total.tv_nsec << endl;
 	log_stream << "total time for overlap: (seconds:nanoseconds)        " << overlap_total.tv_sec << ":" << overlap_total.tv_nsec << endl;
@@ -2604,6 +3295,7 @@ void Clustgun::cluster(string inputfile) {
 	log_stream << "total time for everything:     (clock ticks) " << totalclocks << " (seconds) " << (float) totalclocks/CLOCKS_PER_SEC << endl;
 	
 	//log_stream << "clock: " <<  clock() << " " << clock()/CLOCKS_PER_SEC<< endl;
+
 	#endif
 }
 
@@ -2624,8 +3316,6 @@ void usage(boost::program_options::options_description& options) {
 
 
 int main(int argc, const char * argv[])	{
-	
-	
 	
 	
 	
@@ -2656,10 +3346,11 @@ int main(int argc, const char * argv[])	{
 		//("windowLength",		po::value< int >(&windowLength)->default_value(10),						"length of sliding window")
 		//("windowScoreThreshold",po::value< int >(&windowScoreThreshold)->default_value(0),				"min avg score in sliding window")
 		("blosum",				po::value< string >(&blosum_file)->default_value("BLOSUM62"),			"")
+		("threads",				po::value< int >(&thread_count_requested)->default_value(0),						"thread count, default(0) all threads")
+	
 	
 		("output",				po::value< string >(),													"output file")
 		("name",				po::value< string >(&prefixname)->default_value("cluster"),				"fasta description prefix name")
-		("list",																						"list all members and their offsets of a cluster")
 		("help",																						"display this information");
 	
 	po::options_description options_hidden("Hidden");
@@ -2789,12 +3480,12 @@ int main(int argc, const char * argv[])	{
 	log_stream << endl;
 	
 	
-	Clustgun my_pc = Clustgun();
+	Clustgun * my_pc = new Clustgun();
 	
-	my_pc.listfile = string(listfile);
+	my_pc->listfile = string(listfile);
 	
 	if (vm.count("output")) {
-		my_pc.outputfile=vm["output"].as< string >();
+		my_pc->outputfile=vm["output"].as< string >();
 	}
 	
 	//if (vm.count("blosum")) {
@@ -2815,12 +3506,12 @@ int main(int argc, const char * argv[])	{
 	}
 	
 	
-	if (vm.count("list")) {
-		my_pc.list_all_members = true;
-	}
+	//if (vm.count("list")) {
+	my_pc->list_all_members = true;
+	//}
 	
 	if (vm.count("sort")) {
-		my_pc.sort_input_seq = true;
+		my_pc->sort_input_seq = true;
 	}
 	
 	
@@ -2834,8 +3525,9 @@ int main(int argc, const char * argv[])	{
 	// ----------------------------------
 	// run
 	
-	my_pc.cluster(input_file);
+	my_pc->cluster(input_file);
 	
+	delete my_pc;
 	log_stream.flush();
     log_stream.close();
 		

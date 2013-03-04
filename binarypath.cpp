@@ -37,7 +37,7 @@ string getbinarypath() {
 	// ###Linux###
 	
 	char buffer[BUFSIZ];
-	size_t foo = readlink("/proc/self/exe", buffer, BUFSIZ);
+	readlink("/proc/self/exe", buffer, BUFSIZ);
 	printf("%s\n", buffer);
 
 	

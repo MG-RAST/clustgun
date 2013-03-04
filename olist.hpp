@@ -11,11 +11,24 @@
 
 //#include <iterator>
 
+#include <boost/iterator/iterator_facade.hpp> // header-only lib
+
+#include <boost/dynamic_bitset.hpp>
+
+#include "basic_tools_omp.hpp" // for the lock
+
+
 using namespace std;
+
+
 
 // unrolled linked list
 
-const int lengthofmyolistarrays = 10;
+//const int lengthofmyolistarrays = 10;
+const int lengthofmyolistarrays = 32;
+
+template <class T1, class T2>
+class OList_iterator;
 
 
 template <class T1, class T2>
@@ -30,79 +43,101 @@ public:
 };
 
 
+
+
+
 template <class T1, class T2>
 class OList {
 public:
+	
+	typedef OList_iterator<T1, T2> iterator;
+	
+	
+	
 	OListArray<T1, T2> *start;
-	OListArray<T1, T2> *end;
+	OListArray<T1, T2> *lastArray;
 	
 	int lastArrayPosition; // last element in last array
 	int length;
-	
-	// for iteration purposes; using real c++ iterator would be nice:
-	OListArray<T1, T2> *currentListArray;
-	int currentArrayPosition;
+
+	#ifdef DEBUG
+	bool test_write_access;
+	#endif
 	
 	OList<T1, T2>(){
 		start=NULL;
-		end=NULL;
+		lastArray=NULL;
 		lastArrayPosition=-1;
 		length = 0;
 		
-		currentListArray = NULL;
-		currentArrayPosition = -1;
+		//currentListArray = NULL;
+		//currentArrayPosition = -1;
+#ifdef DEBUG
+		test_write_access=false;
+#endif
+		
 	};
 	
 	~OList<T1, T2>(){
 		
-		currentListArray = start;
+		OListArray<T1, T2> * currentListArray = start;
 		while (currentListArray != NULL) {
 			OListArray<T1, T2> *delArray = currentListArray;
 			currentListArray = currentListArray->nextArray;
 			delete delArray;
 		}
-		
 	}
 	
-	T1& getFirst(){
+	
+	
+	T1& getFirst_ext(OListArray<T1, T2> * currentListArray, int currentArrayPosition){
 		
 		#ifdef DEBUG
-		if (this->currentListArray == NULL ) {
+		if (currentListArray == NULL ) {
 			cerr << "error: (getFirst) this->currentListArray == NULL" << endl;
 			exit(1);
 		}
 		
-		if (this->currentArrayPosition < 0) {
+		if (currentArrayPosition < 0) {
 			cerr << "error: (getFirst) this->currentArrayPosition < 0" << endl;
 			exit(1);
 		}
 		#endif
 		
-		return this->currentListArray->data_array1[this->currentArrayPosition];
+		return currentListArray->data_array1[currentArrayPosition];
 	}
 	
-	T2& getSecond(){
+	T2& getSecond_ext(OListArray<T1, T2> * currentListArray, int currentArrayPosition){
 		
 		#ifdef DEBUG
-		if (this->currentListArray == NULL ) {
-			cerr << "error: (getSecond) this->currentListArray == NULL" << endl;
+		if (currentListArray == NULL ) {
+			cerr << "error: (getSecond) currentListArray == NULL" << endl;
 			exit(1);
 		}
 		
-		if (this->currentArrayPosition < 0) {
-			cerr << "error: (getSecond) this->currentArrayPosition < 0" << endl;
+		if (currentArrayPosition < 0) {
+			cerr << "error: (getSecond) currentArrayPosition < 0" << endl;
 			exit(1);
 		}
 		#endif
 		
-		return this->currentListArray->data_array2[this->currentArrayPosition];
+		return currentListArray->data_array2[currentArrayPosition];
 	}
 	
 	
-	void eraseElement() {
+	
+	void erase(iterator & it) {
+		OListArray<T1, T2> * currentListArray = it.position.first;
+		int currentArrayPosition = it.position.second;
+		eraseElement_ext(currentListArray, currentArrayPosition);
+	}
+	
+	
+	
+	void eraseElement_ext(OListArray<T1, T2> * currentListArray, int currentArrayPosition) {
 		
 		// overwrite entry with last entrythis->
-		if (this->currentListArray != this->end || this->currentArrayPosition != lastArrayPosition) { // not necessary if we want do delete the last element
+		if (currentListArray != this->lastArray || currentArrayPosition != this->lastArrayPosition) { // not necessary if we want do delete the last element
 			
 			//cout << "this->currentArrayPosition: " << this->currentArrayPosition << endl;
 			
@@ -114,9 +149,9 @@ public:
 			//cout << "1) this->currentListArray->data_array1[this->currentArrayPosition]: " << this->currentListArray->data_array1[this->currentArrayPosition]<< endl;
 			
 			
-			this->currentListArray->data_array1[this->currentArrayPosition]=this->end->data_array1[this->lastArrayPosition];
+			currentListArray->data_array1[currentArrayPosition]=this->lastArray->data_array1[this->lastArrayPosition];
 			//cout << "2) this->currentListArray->data_array1[this->currentArrayPosition]: " << this->currentListArray->data_array1[this->currentArrayPosition]<< endl;
-			this->currentListArray->data_array2[this->currentArrayPosition]=this->end->data_array2[this->lastArrayPosition];
+			currentListArray->data_array2[currentArrayPosition]=this->lastArray->data_array2[this->lastArrayPosition];
 		}
 		
 		// delete last element, to avoid duplicate
@@ -124,19 +159,20 @@ public:
 		
 	}
 	
+	
 	// delete last element
 	void pop_back(){
 		if (this->lastArrayPosition>0) {
 			this->lastArrayPosition--;
 		} else {
 			// have to delete last array completly:
-			OListArray<T1, T2> * secondLastArray = this->end->prevArray;
+			OListArray<T1, T2> * secondLastArray = this->lastArray->prevArray;
 			
-			delete this->end;
-			this->end = secondLastArray; // might also be NULL, ok
-			//cout << "this->end: " << this->end<< endl;
-			if (this->end != NULL) {
-				this->end->nextArray = NULL;
+			delete this->lastArray;
+			this->lastArray = secondLastArray; // might also be NULL, ok
+			//cout << "this->lastArray: " << this->end<< endl;
+			if (this->lastArray != NULL) {
+				this->lastArray->nextArray = NULL;
 				this->lastArrayPosition = lengthofmyolistarrays-1;
 			} else {
 				this->start = NULL; // list contains no arrays
@@ -148,10 +184,6 @@ public:
 		
 	}
 	
-	void resetIterator(){
-		currentListArray = start;
-		currentArrayPosition = -1;
-	}
 	
 	int getLength() {
 		return this->length;
@@ -167,7 +199,7 @@ public:
 		
 		OListArray<T1, T2> *currentListArray_tmp = start;
 		int length = 0;
-		while (currentListArray_tmp != end) {
+		while (currentListArray_tmp != lastArray) {
 			for (int i =0 ; i< lengthofmyolistarrays; ++i) {
 				//cout << (length + i) << ": " <<  currentListArray_tmp->data_array1[i] << endl;
 				cout << (length + i) << ": (" <<  currentListArray_tmp->data_array1[i] << "," << currentListArray_tmp->data_array2[i] << ")"<< endl;
@@ -185,75 +217,93 @@ public:
 		return;
 	}
 	
-	// iterate through list and array elements
-	bool nextElement() {
-		if (currentListArray == NULL) return false;
+	// for iterators to use.. (move code into iterator ???)
+	pair<OListArray<T1, T2> *, int> nextElement_extIt(OListArray<T1, T2> * currentListArray, int currentArrayPosition) {
+		//cerr << "nextElement_extIt" << endl;
+		if (currentListArray == NULL) return make_pair((OListArray<T1, T2> *) NULL, -1); //<OListArray<T1, T2> *, int>
 		
 		if (currentListArray->nextArray != NULL) {
 			
 			if (currentArrayPosition < lengthofmyolistarrays-1) {
-				this->currentArrayPosition++;
+				// increase in same array
+				currentArrayPosition++;
 			} else {
-				//cout << "--" << endl;
-				this->currentArrayPosition = 0;
+				//go in next array
+				currentArrayPosition = 0;
 				currentListArray=currentListArray->nextArray;
-			}	
+			}
 		} else {
+			// last array
 			if (currentArrayPosition < lastArrayPosition) {
-				this->currentArrayPosition++;
+				currentArrayPosition++;
 			} else {
-				return false;
+				return make_pair(currentListArray, lastArrayPosition+1); // this points to the element after the last element, for end()-method //<OListArray<T1, T2> *, int
 			}
 		}
 		
-		
-		return true;
+		return make_pair(currentListArray, currentArrayPosition); //<OListArray<T1, T2> *, int>
 	}
 	
-	bool previousElement() {
-		if (this->currentListArray == NULL) return false;
+	pair<OListArray<T1, T2> *, int>  previousElement_extIt(OListArray<T1, T2> * currentListArray, int currentArrayPosition) { 
+		if (currentListArray == NULL) return false;
 		
-		if (this->currentArrayPosition > 0) {
-			this->currentArrayPosition--;
+		if (currentArrayPosition > 0) {
+			currentArrayPosition--;
 			
 		} else {
 			
-			if (this->currentListArray->prevArray == NULL) {
+			if (currentListArray->prevArray == NULL) {
 				return false;
 			}
 			
-			this->currentListArray = this->currentListArray->prevArray;
-			this->currentArrayPosition = lengthofmyolistarrays - 1;
+			currentListArray = currentListArray->prevArray;
+			currentArrayPosition = lengthofmyolistarrays - 1;
 		}
 		
 		
-		return true;
+		return make_pair(currentListArray, currentArrayPosition); //<OListArray<T1, T2> *, int>
 	} 
 	
 	void append(T1 a, T2 b){
 		//cout << "append" << endl;
+	
+#ifdef DEBUG
+#pragma omp critical(test_write_access)
+		{
+			if (test_write_access) {
+				cerr << "error: olist test_write_access" << endl;
+				exit(1);
+			}
+			
+			test_write_access=true;
+		}
+		
+#endif
 		
 		if (this->start == NULL) {
+			OListArray<T1, T2> * temparray;
 			#ifdef DEBUG
 			try {
 			#endif
-				this->start = new OListArray<T1, T2>(); 
+				temparray = new OListArray<T1, T2>(); 
 			#ifdef DEBUG
 			} catch (bad_alloc& ba) {
 				cerr << "error: (olist) bad_alloc caught: " << ba.what() << endl;
 				exit(1);
 			}
 			#endif
-			this->end = this->start;
+			this->start = temparray;
+			this->lastArray = this->start;
 			this->lastArrayPosition = 0;
+			
 			//cout << "appendcreatefirst" << endl;
 		} else if (lastArrayPosition < lengthofmyolistarrays-1) {
 			this->lastArrayPosition++;
 			//cout << "appendext" << endl;
-		} else {
+		} else { // last position in array
 			#ifdef DEBUG
-			if (this->end->nextArray != NULL) {
-				cerr << "error: (append) this->end->nextArray != NULL" << endl;
+			if (this->lastArray->nextArray != NULL) {
+				cerr << "error: (append) this->lastArray->nextArray != NULL" << endl;
 				exit(1);	
 			}
 			#endif
@@ -271,26 +321,142 @@ public:
 			#endif
 			
 			// link old end and new end:
-			this->end->nextArray = newarray;
-			newarray->prevArray = this->end;
+			this->lastArray->nextArray = newarray;
+			newarray->prevArray = this->lastArray;
 			
-			this->end = newarray;
+			this->lastArray = newarray;
 			this->lastArrayPosition = 0;
 			
 			//cout << "appendnew-----" << endl;
 		}
 		
-		this->end->data_array1[lastArrayPosition]=a;
-		this->end->data_array2[lastArrayPosition]=b;
+		this->lastArray->data_array1[lastArrayPosition]=a;
+		this->lastArray->data_array2[lastArrayPosition]=b;
 		
 		this->length++;
+		
+#ifdef DEBUG
+#pragma omp critical(test_write_access)
+		{
+			if (not test_write_access) {
+				cerr << "error: olist NOT test_write_access" << endl;
+				exit(1);
+			}
+			
+			test_write_access=false;
+		}
+		
+#endif
 		
 		return;
 		
 	}
 	
 	
+	
+	iterator begin() {
+		if (start != NULL) {
+			
+			return iterator( this, make_pair(start, (int) 0) ); // <OListArray<T1, T2> *, int>
+		}
 		
+		//return iterator( this, make_pair(lastArray, lastArrayPosition+1) );
+		return end();
+	}
+	
+	iterator end() {
+		return iterator( this, make_pair(lastArray, lastArrayPosition +1) ); // has to point to element after last element...
+	}
+	
+	
+	
+};
+
+
+
+// OList with reader-writer lock
+template <class T1, class T2>
+class OList_rwlock : public ReaderWriterLock, public OList<T1,T2> {
+	public:
+	OList_rwlock(){};
+	OList_rwlock(int thread_count): ReaderWriterLock(thread_count) {};
+	
+};
+
+
+// this iterator has the problem that is cannot increment without a pointer to the main data object
+template <class T1, class T2>
+class OList_iterator : public boost::iterator_facade<	OList_iterator<T1, T2>,
+														pair< OListArray<T1, T2> *, int>,
+														boost::forward_traversal_tag
+> {
+	public:
+		
+		typedef pair< OListArray<T1, T2> *, int> OListPosPair;
+		typedef OList_iterator<T1, T2> _base;
+
+		OList_iterator(){}
+	
+//		OList_iterator()
+//			:	olist(0)
+//		{
+//			position = make_pair((OListArray<T1, T2> *) NULL, 0) ; //<OListArray<T1, T2> *, int >
+//		}
+//	
+//		OList_iterator(OList<T1, T2> * list)
+//			:	olist(list)
+//		{
+//			position = make_pair((OListArray<T1, T2> *) NULL, 0) ; //< OListArray<T1, T2> *, int >
+//		}
+//	
+		OList_iterator(OList<T1, T2> * list, OListPosPair position)
+			:	olist(list),
+				position(position)
+		{}
+			
+	
+
+	
+		T1& getFirst(){
+			return olist->getFirst_ext(position.first, position.second);
+		}
+			
+		T2& getSecond(){
+			return olist->getSecond_ext(position.first, position.second);
+		}
+	
+
+	
+	private:
+	
+		
+	
+		OList<T1, T2> * olist;
+		OListPosPair position;
+		
+	
+		friend class boost::iterator_core_access;
+		friend class OList<T1, T2>; // Olist erase function needs access to position
+	
+		void increment() {
+			//m_node = m_node->next();
+			position = olist->nextElement_extIt(position.first, position.second);
+		}
+	
+		bool equal(_base const& other) const{
+			return  ( this->position == other.position );
+			//return  ( (this->position.first == other.position.first) && (this->position.second == other.position.second) );
+			//return this->m_node == other.m_node;
+		}
+	
+		
+		
+		// returns a pair
+		OListPosPair& dereference() const {
+			
+			return make_pair< T1, T2>(getFirst_ext(position.first, position.second), getSecond_ext(position.first, position.second));
+			//return *m_node;
+		}
 };
 
 

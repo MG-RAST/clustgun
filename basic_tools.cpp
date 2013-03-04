@@ -5,6 +5,78 @@
 
 
 
+
+timespec diff(timespec start, timespec end)
+{
+	timespec temp;
+	if ((end.tv_nsec-start.tv_nsec)<0) {
+		temp.tv_sec = end.tv_sec-start.tv_sec-1;
+		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	} else {
+		temp.tv_sec = end.tv_sec-start.tv_sec;
+		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+	return temp;
+}
+
+timespec add_time(timespec time1, timespec time2) {
+	timespec result;
+	result.tv_sec = time1.tv_sec + time2.tv_sec ;
+    result.tv_nsec = time1.tv_nsec + time2.tv_nsec ;
+    if (result.tv_nsec >= 1000000000L) {		/* Carry? */
+        result.tv_sec++ ;  result.tv_nsec = result.tv_nsec - 1000000000L ;
+    }
+	
+    return (result) ;
+	
+}
+
+
+int msleep(unsigned long milisec)
+{
+    struct timespec req={0};
+    time_t sec=(int)(milisec/1000);
+    milisec=milisec-(sec*1000);
+    req.tv_sec=sec;
+    req.tv_nsec=milisec*1000000L;
+    while(nanosleep(&req,&req)==-1)
+		continue;
+    return 1;
+}
+
+int nsleep(unsigned long nanosec) // 1.000.000 milisec = 1 nanosec !!!
+{
+    struct timespec req={0};
+    //time_t sec=(int)(milisec/1000);
+    //milisec=milisec-(sec*1000);
+    req.tv_sec=0;
+    req.tv_nsec=nanosec;
+    while(nanosleep(&req,&req)==-1)
+		continue;
+    return 1;
+}
+
+
+int * get_nucleobase_ascii2num() {
+	
+	int * nucleobase_ascii2num;
+	nucleobase_ascii2num = new int [256];
+	
+	for (int i=0; i< 256; i++) {nucleobase_ascii2num[i] = -1;}
+	nucleobase_ascii2num['A']=0;
+	nucleobase_ascii2num['T']=1;
+	nucleobase_ascii2num['G']=2;
+	nucleobase_ascii2num['C']=3;
+	nucleobase_ascii2num['a']=0;
+	nucleobase_ascii2num['t']=1;
+	nucleobase_ascii2num['g']=2;
+	nucleobase_ascii2num['c']=3;
+	nucleobase_ascii2num['U']=1;
+	nucleobase_ascii2num['u']=1;
+	
+	return nucleobase_ascii2num;
+}
+
 std::string getFileExtension(const std::string& FileName) {
 	//cout <<"Z:" <<FileName << endl;
 	size_t pos  = FileName.find_last_of(".");
@@ -189,7 +261,7 @@ void reverseComplementDNA(string& sequence) {
 	char c;
 	for (int i=0; i<len; i++) {
 		c = sequence[i];
-		toupper(c);
+		c = toupper(c);
 		switch (c) {
 			case 'A':
 				c='T';
