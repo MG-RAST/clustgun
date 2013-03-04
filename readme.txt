@@ -7,23 +7,16 @@ INSTALLATION
 ------------
 If you have admin rights on your system, you won't need to use --prefix option.
 
-1) Sparsehash Package (formerly Google Sparsehash) (http://code.google.com/p/sparsehash/)
-> wget http://sparsehash.googlecode.com/files/sparsehash-2.0.2.tar.gz
-> tar xvfz sparsehash-2.0.2.tar.gz
-> cd sparsehash-2.0.2
-> ./configure --prefix=$HOME
-> make
-> make install
-
-2) Boost C++ libraries (http://www.boost.org)
-(you might also be able to install it from your systems software repository, e.g. ubuntu:  "sudo apt-get install libboost-system-dev libboost-iostreams-dev libboost-program-options-dev")
+1) Boost C++ libraries (http://www.boost.org)
+in ubuntu:  "sudo apt-get install libboost-system-dev libboost-iostreams-dev libboost-program-options-dev"
+or from source:
 > wget http://sourceforge.net/projects/boost/files/boost/1.53.0/boost_1_53_0.tar.gz
 > tar xvfz boost_1_53_0.tar.gz
 > cd boost_1_53_0
 > ./bootstrap.sh --with-libraries=iostreams,program_options,system --prefix=$HOME
 > ./b2 --layout=system install
 
-3) clustgun (https://github.com/MG-RAST/clustgun/)
+2) clustgun (https://github.com/MG-RAST/clustgun/)
 download:
 > git clone git://github.com/MG-RAST/clustgun.git
 > cd clustgun
@@ -52,12 +45,12 @@ export LD_LIBRARY_PATH
 If the BOOST library is not found (although installed), check if the library file names are suffixed with "-mt" and change the makefile accordingly.
 
 only for developing purposes:
-> make CFLAGS='-DEBUG -DTIME'
+> make CFLAGS='-DEBUG -DTIME -DEBUG_DEADLOCK'
 
 RUN
 ---
 basic usage:
-> ./clustgun input.fas
+> ./clustgun input.faa
 
 for help call clustgun without any parameters:
 > ./clustgun
