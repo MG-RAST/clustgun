@@ -45,7 +45,7 @@ export LD_LIBRARY_PATH
 If the BOOST library is not found (although installed), check if the library file names are suffixed with "-mt" and change the makefile accordingly.
 
 only for developing purposes:
-> make CFLAGS='-DEBUG -DTIME -DEBUG_DEADLOCK'
+> make CFLAGS='-DEBUG -DTIME -DDEBUG_DEADLOCK'
 
 RUN
 ---
