@@ -18,3 +18,7 @@ make
 
 sudo ln -s /home/ubuntu/clustgun/clustgun /usr/bin/clustgun
 
+if [ -d ~/apps/bin/ ]; then
+	cd ~/apps/bin/
+	ln -sf /home/ubuntu/clustgun/clustgun
+fi
