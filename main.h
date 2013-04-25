@@ -112,6 +112,8 @@ template <class T1, class T2, class T3> class triplet;
 
 const int aminoacid_count = 21;
 const char aminoacid_int2ASCII[aminoacid_count+1] = "ARNDCEQGHILKMFPSTWYV*"; // 20 AA according to wikipedia.. ;) plus stop codon "*"
+																				// warning X can be represented either as -1 or aminoacid_count,
+																				// normal values go from 0 to aminoacid_count-1
 aminoacid aminoacid_ASCII2int[256];
 
 
@@ -323,7 +325,7 @@ private:
 public:
 	mybasicstring(size_t seq_len){
 		this->data_len = seq_len;
-		this->data =new T[this->data_len+1];
+		this->data =new T[seq_len+1];
 		this->data[this->data_len] = '\0';
 	}
 	

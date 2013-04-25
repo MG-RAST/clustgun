@@ -54,7 +54,7 @@ public:
 	
 	ReaderWriterLock(int threadcount){
 		omp_init_lock(&writer_lock);
-		//omp_set_lock(&writer_lock); // to test deadlock detection
+		
 		this->reader_counter = 0; 
 		#ifdef USE_FLUSH_NEEDED
 		//flush_needed = boost::dynamic_bitset<>(threadcount);

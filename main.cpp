@@ -173,8 +173,6 @@ bool sortbyPairSecond( const pair<int, short>& i, const pair<int, short>& j ) {
 mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster already locked
 						  HashedArrayTree<pair<mystring, mystring > > * inputSequences,
 						  vector<char> * alignment_column,
-						  vector<bool> * aminoacid_occurence,
-						  vector<int> * aminoacid_scores,
 						  short * score_matrix,
 						  int ** cluster_aminoacid_counts	) {
 	
@@ -203,6 +201,7 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 		
 		
 		short pos =  mylist_it.getSecond();
+		//cout << string(20+pos , 'x' ) << read_sequence->c_str() << endl; // print member
 		
 		if ((int)pos + (int)read_sequence->length() > new_consensus_length) {
 			new_consensus_length = pos + read_sequence->length();
@@ -217,6 +216,8 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 	// adjust new_consensus_length
 	new_consensus_length-=base_offset;
 	
+	//cout << string(new_consensus_length , 'C' ) << endl;
+	
 	#ifdef DEBUG
 	if (new_consensus_length > max_protein_length) {
 		cerr << "error: new_consensus_length > max_protein_length" << endl;
@@ -227,7 +228,7 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 	// init cluster_aminoacid_counts
 	for (int i = 0 ; i < new_consensus_length ; ++i ) {
 		int * blabla = cluster_aminoacid_counts[i];
-		for (int j = 0; j < aminoacid_count ; ++j  ) {
+		for (int j = 0; j <= aminoacid_count ; ++j  ) {
 			blabla[j]=0;
 		}
 	}
@@ -255,6 +256,7 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 	}
 	#endif
 	
+	
 	#ifdef DEBUG
 	for (int i= 0 ; i < new_consensus_length; ++i) {
 		
@@ -262,6 +264,7 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 	}
 	#endif
 	
+
 	
 	// update the real memberlist
 	// update offsets (leftmost member has now offset zero)
@@ -295,19 +298,26 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 			
 			int * aa_array = cluster_aminoacid_counts[offset+i];
 			
+			
 			if (aa >= aminoacid_count) {
-				cerr << "aa >= aminoacid_count || aa < 0" << endl;
+				cerr << "aa >= aminoacid_count" << endl;
 				cerr << (int) aa << endl;
 				cerr << (int) aa_char << " " << aa_char << endl;
 				exit(1);
 			}
-			if (aa > 0 ) { // known amino acid
+			
+			
+			if (aa >= 0 ) { // known amino acid
 				aa_array[aa]++;
+			} else {
+				aa_array[aminoacid_count]++; // for X
 			}
 			#else
 			aminoacid aa = aminoacid_ASCII2int[(int)(*read_sequence)[i]];
-			if (aa > 0 ) { // known amino acid
+			if (aa >= 0 ) { // known amino acid
 				cluster_aminoacid_counts[offset+i][aa]++;
+			}else {
+				cluster_aminoacid_counts[offset+i][aminoacid_count]++; // for X
 			}
 			#endif
 		}
@@ -315,9 +325,9 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 	}
 	
 	
-	// go through each column to find consenss
+	// go through each column to find consensus
 	for (int col_index = 0 ; col_index < new_consensus_length ; ++col_index ) {
-		
+	//cerr << "col_index: " <<  col_index << endl;
 		
 		int * col = cluster_aminoacid_counts[col_index];
 		
@@ -326,31 +336,38 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 		int max_aa_count = 0;
 		int total_aa_count = 0;
 		
-		for (aminoacid this_aa = 0; this_aa < aminoacid_count ; ++this_aa  ) {
+		for (aminoacid this_aa = 0; this_aa <= aminoacid_count ; ++this_aa  ) { // last aminoacid_count for X
 			int this_aa_count = col[this_aa];
+			//cerr << (int) this_aa << " " << this_aa_count << endl;
 			total_aa_count += this_aa_count;
 			if (this_aa_count > max_aa_count) {
 				max_aa = this_aa;
 				max_aa_count = this_aa_count;
 			}
 		}
+
+
 		
 		if ((double)max_aa_count > (double)total_aa_count*0.5) {
 			// majority found
-			char c = aminoacid_int2ASCII[max_aa];
-			(*new_consensus_seq)[col_index] = c;
+			if (max_aa != aminoacid_count) {
+				char c = aminoacid_int2ASCII[max_aa];
+				(*new_consensus_seq)[col_index] = c;
+			} else { // max_aa == aminoacid_count is X
+				(*new_consensus_seq)[col_index] = 'X';	
+			}
+				
+			//cerr << "majority: " <<  c << endl;
 			continue; // goto next column
 		}
 		
 		// majority not found, try sum-of-pairs strategy
-		//int max_score= 0;
-		//max_aa = 0;
 		
 		int best_candiate_score=INT_MIN;
 		aminoacid best_candidate=-1; // X unknown
 		for (aminoacid candidate_aa = 0; candidate_aa < aminoacid_count; ++candidate_aa) {
-			//(*aminoacid_occurence)[aa] = false;
-			//(*aminoacid_scores)[aa] = 0;
+			
+			
 			
 			
 			if ( col[candidate_aa] != 0 ) {
@@ -370,7 +387,10 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 			}
 			
 		}
-		if (best_candidate > 0) {
+		
+		//cerr << "best_candidate: " <<  (int) best_candidate << endl;
+		
+		if (best_candidate >= 0) {
 			char c = aminoacid_int2ASCII[best_candidate];
 			(*new_consensus_seq)[col_index] = c;
 		} else {
@@ -388,8 +408,118 @@ mystring * computeConsensus(cluster_member_list * mymemberlist, // cluster alrea
 		}
 	}
 	#endif
-		
+	
+
+	
 	return new_consensus_seq;
+}
+
+triplet<int, int, double> getClusterStats(int consensus_length,
+							cluster_member_list * mymemberlist,
+							HashedArrayTree<pair<mystring, mystring > > * inputSequences,
+							vector<char> * alignment_column,
+							vector<int> * aminoacid_coverage,
+							short * score_matrix,
+							int ** cluster_aminoacid_counts	) {
+	
+	
+	
+	cluster_member_list::iterator mylist_it;
+	
+		
+	//cout << string(consensus_length , 'C' ) << endl;
+	
+
+	
+	// init cluster_aminoacid_counts
+	for (int i = 0 ; i < consensus_length ; ++i ) {
+		(*aminoacid_coverage)[i]=0;
+		int * blabla = cluster_aminoacid_counts[i];
+		for (int j = 0; j <= aminoacid_count ; ++j  ) {
+			blabla[j]=0;
+		}
+	}
+	
+	
+	
+	
+	
+	// get coverage (total and per amino acid)
+	for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
+		//mylist_it.getSecond() -= base_offset;
+		
+		int read_id = mylist_it.getFirst();
+		int offset = mylist_it.getSecond();
+		//mylist_it.getSecond() = offset;
+		
+		mystring * read_sequence = &((*inputSequences)[read_id].second);
+		
+		
+		// go through aminoacids in member:
+		for (size_t i = 0; i < read_sequence->length(); ++i ) {
+			aminoacid aa = aminoacid_ASCII2int[(int)(*read_sequence)[i]];
+			if (aa >= 0 ) { // known amino acid
+				cluster_aminoacid_counts[offset+i][aa]++;
+			}else {
+				cluster_aminoacid_counts[offset+i][aminoacid_count]++; // for X
+			}
+			//(*aminoacid_coverage)[offset+i]++;
+			try {
+			aminoacid_coverage->at(offset+i)++;
+			} catch (const std::out_of_range& oor) {
+				
+				cerr << "Out of Range error: " << oor.what() << '\n';
+				cerr << "offset: " << offset << endl;
+				cerr << "i: " << i << endl;
+				exit(1);
+			}
+		}
+		
+	}
+	
+	
+	std::sort (aminoacid_coverage->begin(), aminoacid_coverage->begin()+consensus_length);
+	
+	//int median_coverage = (*aminoacid_coverage)[consensus_length/2];
+	int median_coverage = aminoacid_coverage->at(consensus_length/2);
+	int avg_coverage = 0;
+	
+	int avg_deviation = 0;
+	for (int col_index = 0 ; col_index < consensus_length ; ++col_index ) {
+		//avg_deviation += abs((*aminoacid_coverage)[col_index]-median_coverage);
+		avg_deviation += abs(aminoacid_coverage->at(col_index)-median_coverage);
+		//avg_coverage += (*aminoacid_coverage)[col_index];
+		avg_coverage += aminoacid_coverage->at(col_index);
+	}
+	avg_deviation /= consensus_length;
+	avg_coverage  /= consensus_length;
+	
+	double rel_dev = (double) avg_deviation / (double)median_coverage;
+	
+	
+//	if (false) {
+//	
+//		// go through each column to get something, maybe diversity
+//		for (int col_index = 0 ; col_index < consensus_length ; ++col_index ) {
+//			//cerr << "col_index: " <<  col_index << endl;
+//			
+//			int * col = cluster_aminoacid_counts[col_index];
+//			
+//			// do a majority vote:
+//			
+//			
+//			for (aminoacid this_aa = 0; this_aa <= aminoacid_count ; ++this_aa  ) { // last aminoacid_count for X
+//				int this_aa_count = col[this_aa];
+//			}
+//			
+//			
+//			
+//		}
+//	}
+	
+	
+	
+	return triplet<int, int, double>(avg_coverage, median_coverage, rel_dev);
 }
 
 void addConsensusSequence(mystring * newconsensus, int cluster, HashTable * cluster_kmer_hash) {
@@ -1173,7 +1303,7 @@ void Clustgun::cluster(string inputfile) {
 							
 			   
 			if (total_read_count % 1000000 == 0 ) {
-				cerr << "total_read_count: " << total_read_count << endl;
+				log_stream << "total_read_count: " << total_read_count << endl;
 			}
 						   
 			
@@ -1195,7 +1325,7 @@ void Clustgun::cluster(string inputfile) {
 	}
 	
 	if (total_read_count % 1000000 != 0 || total_read_count == 0 ) {
-	cerr << "total_read_count: " << total_read_count << endl;
+		log_stream << "total_read_count: " << total_read_count << endl;
 	}
 
 	
@@ -1304,7 +1434,51 @@ void Clustgun::cluster(string inputfile) {
 	
 	
 		
+	if (this->outputfile.length() == 0) {
+		
+		string extension = getFileExtension(inputfile);
+		string fileNoExt =  getFileNameWithoutExtension(inputfile);
+		
+		this->outputfile = fileNoExt;
+		
+		if (extension.compare("faa")== 0 || extension.compare("fa")== 0 || extension.compare("fas")== 0 || extension.compare("fasta")== 0 || extension.compare("txt")== 0) {
+			
+			
+			this->outputfile.append(".clustgun");
+			
+			
+			this->outputfile.append(".");
+			this->outputfile.append(extension);
+		} else {
+			this->outputfile.append(".");
+			this->outputfile.append(extension);
+			this->outputfile.append(".clustgun");
+		}
+		
+		cout << this->outputfile << endl;
+		//exit(0);
+		
+		
+		//this->outputfile = string(inputfile)+string(".consensus");
+	}
 	
+	ofstream output_stream(outputfile.c_str());
+	if (! output_stream.is_open())
+	{
+		cerr << "error writing file " << outputfile << endl;
+		exit(1);
+	}
+	
+	ofstream list_stream;
+	if (list_all_members) {
+		list_stream.open(listfile.c_str());
+		if (! list_stream.is_open())
+		{
+			cerr << "error writing file " << listfile << endl;
+			exit(1);
+		}
+		
+	}
 	
 	
 	
@@ -1380,6 +1554,8 @@ void Clustgun::cluster(string inputfile) {
 	}
 	
 	size_t chunk_start = 0;
+	size_t cluster_start = 0;
+	
 	int chunk_size = 20000;
 	
 	//#####################################################################################
@@ -1471,10 +1647,8 @@ void Clustgun::cluster(string inputfile) {
 			
 			#pragma omp flush
 			
-		}
-		//int num_threads = omp_get_num_threads();
-		//thread_count = num_threads;
-		
+		} // end this_thread_id==0
+				
 		
 //#pragma omp critical(cerr)
 //		{
@@ -1493,8 +1667,8 @@ void Clustgun::cluster(string inputfile) {
 		
 		vector<short> * vector_of_offsets;
 		vector<char> * alignment_column;
-		vector<bool> * aminoacid_occurence;
-		vector<int> * aminoacid_scores;
+		
+		vector<int> * aminoacid_coverage;
 		
 		int max_cluster_id_array[top_n_clusters];
 		int max_cluster_kmer_count_array[top_n_clusters];
@@ -1506,9 +1680,9 @@ void Clustgun::cluster(string inputfile) {
 		alignment_column = new vector<char>();
 		alignment_column->resize(1000000);
 		
-		aminoacid_occurence = new vector<bool>(aminoacid_count, false);
-		aminoacid_scores = new vector<int>(aminoacid_count, 0);
 		
+		aminoacid_coverage = new vector<int>(aminoacid_count, 0);
+		aminoacid_coverage->resize(max_protein_length);
 		
 		mystring * sequence = 0;
 		
@@ -1519,7 +1693,7 @@ void Clustgun::cluster(string inputfile) {
 		int** cluster_aminoacid_counts = new int*[max_protein_length];
 		
 		for (int i = 0 ; i <max_protein_length ; ++i ) {
-			cluster_aminoacid_counts[i]=new int[aminoacid_count];
+			cluster_aminoacid_counts[i]=new int[aminoacid_count+1];
 		}
 				
 #ifdef DEBUG
@@ -1614,7 +1788,7 @@ void Clustgun::cluster(string inputfile) {
 				lastreadseen->reserve(reserve_max); //privat
 				
 			}
-#pragma omp flush(last_cluster)
+			#pragma omp flush(last_cluster)
 			if (last_cluster > (int)countOfOverlappingKmers->capacity()-1000) {
 				cerr << "last_cluster > (int)countOfOverlappingKmers->capacity()-1000" << endl;
 				cerr << "last_cluster: " << last_cluster << endl;
@@ -2259,6 +2433,8 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 					MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 					
 					
+
+					
 					addConsensusSequence(sequence, new_cluster, cluster_kmer_hash);
 					
 					#ifdef DEBUG
@@ -2479,10 +2655,10 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 						mystring * new_consensus_seq = computeConsensus(mymemberlist,  // locked by cluster lock
 																	  inputSequences, 
 																	  alignment_column,
-																	  aminoacid_occurence,
-																	  aminoacid_scores,
 																	  score_matrix,
 																	  cluster_aminoacid_counts	);
+
+						
 						cluster_consensus_sequences->set_writer_lock();
 						#ifdef DEBUG
 						try {
@@ -2501,6 +2677,8 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 						MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 						
 						// insert kmers of new_consensus_seq into hash
+						
+
 						
 						addConsensusSequence(new_consensus_seq, clusterhit, cluster_kmer_hash);
 						
@@ -2779,8 +2957,6 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 						mystring * new_consensus_seq = computeConsensus(master_cluster_member_list,
 																	  inputSequences, 
 																	  alignment_column,
-																	  aminoacid_occurence,
-																	  aminoacid_scores,
 																	  score_matrix,
 																	  cluster_aminoacid_counts);
 						//cout << "D3" << endl;
@@ -2809,6 +2985,8 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 						
 						
 						// insert kmers of new_consensus_seq into hash
+						
+
 						
 						addConsensusSequence(new_consensus_seq, master_cluster, cluster_kmer_hash);
 						
@@ -2856,6 +3034,7 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 			
 			#pragma omp atomic
 			reads_processed+=this_chunk_size;
+			partial_read_count[this_thread_id]=0;
 			
 			if(this_thread_id == 0)
 			{
@@ -2885,15 +3064,13 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 					log_stream << "\t" << difftime(end, begin);
 					
 					
-					if (true) { //TODO
-						double vm, rss;
-						process_mem_usage(vm, rss);
-						log_stream << "\t" << (int)vm << "\t" << (int)rss;
+					
+					double vm, rss;
+					process_mem_usage(vm, rss);
+					log_stream << "\t" << (int)vm << "\t" << (int)rss;
 						
 						
-					} else {
-						log_stream << "\t-\t-";
-					}
+					
 					
 					log_stream << endl;
 					flush(log_stream);
@@ -2901,12 +3078,258 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 			}
 
 		} // end while(1) for read chunks
-		// this thread has finished his task
+		// this thread has finished his clustering task
+		
+		//################################################################################################################
+			
+		#pragma omp flush
+		// wait for all threads finishing clustering
+		#pragma omp barrier
+			
+			
+			
+			
+		// start now with last consensus update
+			
+		if (this_thread_id == 0) {
+			
+			time(&end);
+			
+			double vm, rss;
+			process_mem_usage(vm, rss);
+			log_stream << reads_processed << "\t" << stat_real_cluster_count << "\t" <<  difftime(end, begin) << "\t" << (int)vm << "\t" << (int)rss << endl;
+			
+			log_stream << endl;
+			log_stream << "Clustering finished. Write results into output file \"" << outputfile << "\"... " << endl;
+			
+			if (list_all_members) {
+				log_stream << "Write member lists into list file \"" << listfile << "\"... " << endl;
+			}
+			
+			if ((int) reads_processed != (int) sequence_count) {
+				cerr << "error: reads_processed != sequence_count" << endl;
+				cerr << reads_processed << endl;
+				cerr << sequence_count << endl;
+				exit(1);
+			}
+			
+			if (false && reads_processed % 10000 != 0 && reads_processed > 0) {
+				//cerr << "count: " << read_id << endl;
+				
+				time(&end);
+#pragma omp flush(stat_real_cluster_count)
+				log_stream << reads_processed << "\t" << stat_real_cluster_count ;
+				
+				log_stream << "\t" << difftime(end, begin);
+				
+				log_stream << endl;
+				
+			}
+			//double vm, rss;
+			//process_mem_usage(vm, rss);
+			//log_stream << "-\t-\t-\t" << (int)vm << "\t" << (int)rss << endl;
+
+		}
+			
+			
+			
+			
+			
+			
+		int totalclustercount = last_cluster+1;
+		//cout << "maxclustercount: " << maxclustercount << endl;
+		//cout << "------------- "<< " X2 " << *(inputSequences->at(0).second) << endl;
 		
 		
 		
 		
+		cluster_member_list::iterator mylist_it;
 		
+			
+		int first_cluster;
+		int last_cluster;
+			
+		while (1) {
+			
+			bool all_clusters_processed = false;
+			#pragma omp critical(chunkstart)
+			{
+				if ((int)cluster_start >= totalclustercount) {
+					all_clusters_processed = true;
+				} else {
+					first_cluster = cluster_start;
+					
+					last_cluster = cluster_start+chunk_size-1;
+					if (totalclustercount - 1 < last_cluster) {
+						last_cluster = totalclustercount - 1;
+					}
+					
+					cluster_start += chunk_size;
+				}
+			}
+			if (all_clusters_processed) {
+				break;
+			}
+
+			
+			for (int current_cluster = first_cluster ; current_cluster <= last_cluster; ++current_cluster){
+				
+				if ((*cluster_member_lists)[current_cluster] == NULL) {
+				//if (cluster_member_lists->at(current_cluster) == NULL) {
+					continue; // cluster does not exist anymore
+				}
+				
+								
+				mystring * consensus = (*cluster_consensus_sequences)[current_cluster];
+				
+				
+				
+				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
+				
+				
+				bool consensus_is_read = false;
+				if (consensus == NULL) {
+					consensus_is_read = true;
+					// cluster of size 1 !
+					
+					// pointer to read
+					consensus = &(*inputSequences)[mymemberlist->start->data_array1[0]].second ;
+					
+				}
+				
+#ifdef DEBUG
+				if (consensus == NULL) {
+					cerr << "consensus == NULL" << endl;
+					exit(1);
+					
+				}
+#endif
+				
+				int medcov = -1;
+				double reldev = -1;
+				int avg_coverage = 1;
+				// update consensus a last time
+				if ( not consensus_is_read) {
+					consensus->delete_data();
+					delete consensus;
+					
+					consensus = computeConsensus(mymemberlist,
+												 inputSequences,
+												 alignment_column,
+												 score_matrix,
+												 cluster_aminoacid_counts);
+					
+					
+					(*cluster_consensus_sequences)[current_cluster]= consensus;
+					
+					
+					triplet<int, int, double> stats = getClusterStats(consensus->length(),
+																	  mymemberlist,
+																	  inputSequences,
+																	  alignment_column,
+																	  aminoacid_coverage,
+																	  score_matrix,
+																	  cluster_aminoacid_counts);
+					avg_coverage = stats.first;
+					medcov = stats.second;
+					reldev = stats.third;
+					
+				}
+				
+				
+				
+				std::ostringstream member_sstream; // this avoids unnecessary blocking of the critical section
+				
+				if (list_all_members)  {
+					member_sstream << prefixname << current_cluster << " ";
+					
+					
+					bool start_loop = true;
+					//while (mymemberlist->nextElement()) {
+					
+					for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
+						int seq_id = mylist_it.getFirst();
+						short offset = mylist_it.getSecond();
+						
+						if (start_loop) {
+							start_loop = false;
+						} else {
+							member_sstream << " " ;
+						}
+						
+						member_sstream << "(" << offset << ")" << (*inputSequences)[seq_id].first.c_str();
+					}
+					member_sstream << endl;
+					
+				}
+				
+				
+				#pragma omp critical(output_stream)
+				{
+					output_stream << ">" << prefixname << current_cluster << " length=" << consensus->length() << " size=" << mymemberlist->getLength();
+					
+					if (avg_coverage != 1 ) {
+						output_stream << " avgcov=" << avg_coverage ;
+					}
+					
+					if (medcov != -1 ) {
+						output_stream << " medcov=" << medcov ;
+					}
+					
+					if (reldev != -1 ) {
+						output_stream << " reldev=" << reldev ;
+					}
+
+					output_stream << endl; // end of fasta description line
+					output_stream << consensus->c_str() << endl; // protein consensus sequence
+				
+					if (list_all_members) {
+						list_stream << member_sstream.str();
+					}
+				}
+				
+				
+				
+				// that was wrong! // TODO valgrind memory check
+				
+//				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
+//					mystring * tempseq = new mystring(((*inputSequences)[mylist_it.getFirst()].second).c_str());
+//					//cout << "M " << string(mylist_it.getSecond()+20, '_') << tempseq->c_str() << endl;
+//					delete tempseq;
+//				}
+				//cout << "C " << string(mylist_it.getSecond()+20, '_') << consensus->c_str() << endl;
+			
+				// DELETE STUFF NOW...
+				
+				if (not consensus_is_read) {
+					consensus->delete_data();
+					delete consensus;
+					//cluster_consensus_sequences->set_writer_lock();
+					(*cluster_consensus_sequences)[current_cluster] = NULL;
+					//cluster_consensus_sequences->unset_writer_lock();
+				}
+				//cout << "> cluster" << current_cluster << endl;
+				//cout << *consensus << endl;
+			
+				
+			} // end for (in chunk)
+		
+		
+		} // end while (1) (over chunks)
+		
+			
+		// flush on both output streams
+		#pragma omp critical(output_stream)
+		{
+			output_stream.flush();
+			
+			if (list_all_members) {
+				list_stream.flush();
+			}
+		}
+		
+			
+			
 		//if ((read_id >= limit_input_reads) && (limit_input_reads != -1)) {
 		//	break;
 		//}
@@ -2919,8 +3342,8 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 		
 		delete vector_of_offsets;
 		delete alignment_column;
-		delete aminoacid_occurence;
-		delete aminoacid_scores;
+		
+		delete aminoacid_coverage;
 			
 			
 		for (int i = 0 ; i <max_protein_length ; ++i ) {
@@ -2928,312 +3351,37 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 		}
 		delete [] cluster_aminoacid_counts;
 	
-			
+		#pragma omp critical(cerr)
+			{
+			cerr << "thread id " << this_thread_id << " finished." << endl; // TODO remove
+			}
 		
-	} // end of parallelization #########################
+	} // end of parallelization, (end of pragma omp parallel) #########################
 	
 	
-	if ((int) reads_processed != (int) sequence_count) {
-		cerr << "error: reads_processed != sequence_count" << endl;
-		cerr << reads_processed << endl;
-		cerr << sequence_count << endl;
-		exit(1);
-	}
-	
-	if (reads_processed % 10000 != 0 && reads_processed > 0) {
-		//cerr << "count: " << read_id << endl;
-				
-		time(&end);
-		#pragma omp flush(stat_real_cluster_count)
-		log_stream << reads_processed << "\t" << stat_real_cluster_count ;
 		
-		log_stream << "\t" << difftime(end, begin);
-		
-		log_stream << endl;
-				
-	}
-	//double vm, rss;
-	process_mem_usage(vm, rss);
-	log_stream << "-\t-\t-\t" << (int)vm << "\t" << (int)rss << endl;
-	
 	
 	
 	delete fasta_parser;
-	//cout << "------------- "<< " X1 " << *(inputSequences->at(0).second) << endl;
+		
 
-	
-	
-	// --------------------------------------------------------------------------------------------------
-	// write consensus sequences to output file
-	
-	if (this->outputfile.length() == 0) {
-		
-		string extension = getFileExtension(inputfile);
-		string fileNoExt =  getFileNameWithoutExtension(inputfile);
-		
-		this->outputfile = fileNoExt;
-		
-		if (extension.compare("faa")== 0 || extension.compare("fa")== 0 || extension.compare("fas")== 0 || extension.compare("fasta")== 0 || extension.compare("txt")== 0) {
-			
-			
-			this->outputfile.append(".clustgun");
-		
-		
-			this->outputfile.append(".");
-			this->outputfile.append(extension);
-		} else {
-			this->outputfile.append(".");
-			this->outputfile.append(extension);
-			this->outputfile.append(".clustgun");
-		}
-		
-		cout << this->outputfile << endl;
-		//exit(0);
-		
-		
-		//this->outputfile = string(inputfile)+string(".consensus");
-	}
-	log_stream << " done. write results into output file \"" << outputfile << "\"... " << endl;
-
-	if (list_all_members) {
-		log_stream << " write member lists into list file \"" << listfile << "\"... " << endl;
-	}
-
-	
-	//if ((*cluster_consensus_sequences)[1] != NULL) {
-	//	cout << "check2: " << *(*cluster_consensus_sequences)[1] << endl;
-	//} else {
-	//	cout << "is NULL" << endl;
-	//	
-	//}
-
-	
-	
-	ofstream output_stream(outputfile.c_str());
-	if (! output_stream.is_open())
-	{
-		cerr << "error writing file " << outputfile << endl;
-		exit(1);
-	}
-	
-	ofstream list_stream;
-	if (list_all_members) {
-		list_stream.open(listfile.c_str());
-		if (! list_stream.is_open())
-		{
-			cerr << "error writing file " << listfile << endl;
-			exit(1);
-		}
-
-	}
-		
-	int totalclustercount = last_cluster+1;
-	//cout << "maxclustercount: " << maxclustercount << endl;
-	//cout << "------------- "<< " X2 " << *(inputSequences->at(0).second) << endl;
-	
-	
-	
-	vector<short> * vector_of_offsets;
-	vector<char> * alignment_column;
-	vector<bool> * aminoacid_occurence;
-	vector<int> * aminoacid_scores;
-	
-	vector_of_offsets = new vector<short>();
-	vector_of_offsets->resize(max_protein_length);
-	
-	alignment_column = new vector<char>();
-	alignment_column->resize(1000000);
-	
-	aminoacid_occurence = new vector<bool>(aminoacid_count, false);
-	
-	aminoacid_scores = new vector<int>(aminoacid_count, 0);
-	
-	
-	int** cluster_aminoacid_counts = new int* [max_protein_length];
-	
-	for (int i = 0 ; i <max_protein_length ; ++i ) {
-		
-		cluster_aminoacid_counts[i]=new int[aminoacid_count];
-		int * blabla = cluster_aminoacid_counts[i];
-		for (int j = 0; j < aminoacid_count ; ++j  ) {
-			blabla[j]=0;
-		}
-	}
-	
-	cluster_member_list::iterator mylist_it;
-	
-	for (int current_cluster = 0 ; current_cluster < totalclustercount; ++current_cluster){
-	
-		
-		if ((*cluster_member_lists)[current_cluster] != NULL) {
-			
-			// update consensus first:
-			
-			
-			
-			
-			
-			
-			mystring * consensus = (*cluster_consensus_sequences)[current_cluster];
-			
-			
-			
-			cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-			
-			
-			bool consensus_is_read = false;
-			if (consensus == NULL) {
-				consensus_is_read = true;
-				// cluster of size 1 !
-				
-				// pointer to read
-				consensus = &(*inputSequences)[mymemberlist->start->data_array1[0]].second ;
-				
-			}
-				
-			#ifdef DEBUG
-			if (consensus == NULL) {
-				cerr << "consensus == NULL" << endl;
-				exit(1);
-				
-			}
-			#endif
-			
-			
-			// update consensus a last time
-			if ( not consensus_is_read) {
-				consensus->delete_data();
-				delete consensus;
-				
-				consensus = computeConsensus(mymemberlist,
-											  inputSequences, 
-											  alignment_column,
-											  aminoacid_occurence,
-											  aminoacid_scores,
-											  score_matrix,
-											  cluster_aminoacid_counts);
-				
-				
-				(*cluster_consensus_sequences)[current_cluster]= consensus;
-				
-			}
-			
-			
-			
-			
-			output_stream << ">" << prefixname << current_cluster << " length=" << consensus->length() << " size=" << (*cluster_member_lists)[current_cluster]->getLength();
-			
-			if (true) {
-				output_stream << " cov=";
-				
-				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-				//mymemberlist->resetIterator();
-				//bool start_loop = true;
-				int tot_len = 0;
-				
-				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
-				//while (mymemberlist->nextElement()) {
-					int seq_id = mylist_it.getFirst();
-					//short offset = mymemberlist->getSecond();
-					//cout << seq_id << endl;
-					//if (start_loop) {
-					//	start_loop = false;
-					//} else {
-					//	output_stream << " " ; 
-					//}
-					
-					tot_len += (*inputSequences)[seq_id].second.length();
-					
-				}
-				
-				
-				double avgcov = (double)tot_len / (double) consensus->length();
-				int avgcon_print = (int)(avgcov * 10); // restrict to one digit after decimal point
-				avgcov = (double) avgcon_print / (double) 10;
-				output_stream << avgcov ;
-			}
-			
-			
-			output_stream << endl; // end of fasta description line
-			output_stream << consensus->c_str() << endl; // protein sequence
-			
-			
-			if (list_all_members) {
-				list_stream << prefixname << current_cluster << " ";
-				
-				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-				//mymemberlist->resetIterator();
-				bool start_loop = true;
-				//while (mymemberlist->nextElement()) {
-				
-				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {	
-					int seq_id = mylist_it.getFirst();
-					short offset = mylist_it.getSecond();
-					//cout << seq_id << endl;
-					if (start_loop) {
-						start_loop = false;
-					} else {
-						list_stream << " " ;
-					}
-					
-					list_stream << "(" << offset << ")" << (*inputSequences)[seq_id].first.c_str();
-				}
-				list_stream << endl;
-				
-			}
-			
-			//if (current_cluster == 98240) {
-			//if(true){
-			
-			//if (mymemberlist->getLength() > 10000) {
-			//if (current_cluster == 0) {
-			if (false) {
-				cluster_member_list*& mymemberlist = (*cluster_member_lists)[current_cluster];
-				//mymemberlist->resetIterator();
-				//while(mymemberlist->nextElement()) {
-				for (mylist_it = mymemberlist->begin(); mylist_it != mymemberlist->end(); ++mylist_it) {
-					mystring * tempseq = new mystring(((*inputSequences)[mylist_it.getFirst()].second).c_str());
-					cout << string(mylist_it.getSecond()+20, '_') << tempseq->c_str() << endl;
-					delete tempseq;
-				}
-				cout << consensus->c_str() << endl;
-				//exit(0);
-			}
-			
-			
-			if (not consensus_is_read) {
-				consensus->delete_data();
-				delete consensus;
-				//cluster_consensus_sequences->set_writer_lock();
-				(*cluster_consensus_sequences)[current_cluster] = NULL;
-				//cluster_consensus_sequences->unset_writer_lock();
-			}
-			//cout << "> cluster" << current_cluster << endl;
-			//cout << *consensus << endl;
-		}
-		
-	}
-	
-	
-	//cout << "------------- "<< " X3 " << *(inputSequences->at(0).second) << endl;
 	output_stream.close();
 	if (list_all_members) {
 		list_stream.close();
 	}
 	
 	
-	log_stream << "file written..." << endl;
+	log_stream << "files written..." << endl;
 	
-	log_stream << "clean memory..." << endl;
+	
 	
 	// --- CLEAN UP STUFF --- (only to make valgrind happy)
+	log_stream << "clean memory..." << endl;
 	
 	
 	
-	
-	//cout << cluster_consensus_sequences->name << endl;
 	cluster_consensus_sequences->deleteContentPointers();
-	//cout << "huhu" << endl;
+	
 	delete cluster_consensus_sequences;
 	
 		
@@ -3244,20 +3392,13 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 
 	delete cluster_member_lists;
 	
-	delete vector_of_offsets;
 	
-	delete alignment_column;
-	//cout << "------------- "<< " X4 " << *(inputSequences->at(0).second) << endl;
 	//cout << inputSequences->name << endl;
-	//inputSequences->deleteContentPairOfPointers();
+
 	delete inputSequences;
 	delete inputSequencesData;
 	
-	for (int i = 0 ; i <max_protein_length ; ++i ) {
-			
-		delete [] cluster_aminoacid_counts[i];
-	}
-	delete [] cluster_aminoacid_counts;
+	
 		
 	#ifndef USE_HashTableSimple
 	HashTable::iterator cluster_kmer_hash_it;
@@ -3274,8 +3415,8 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 	
 	
 	delete zcat_command;
-	delete aminoacid_occurence;
-	delete aminoacid_scores;
+	
+	
 	log_stream << "cleaning done." << endl;	
 	
 	date = exec("date");
@@ -3404,6 +3545,7 @@ int main(int argc, const char * argv[])	{
 		
 		input_file = input_files_vec[0];
 		
+		checkFile(&input_file);
 		// multiple input files:
 		//cout << "Input files are: " << endl;
 		//for (int i = 0 ; i < input_files_vec.size(); ++i) {

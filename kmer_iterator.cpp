@@ -49,6 +49,15 @@ KmerIterator::KmerIterator(const char* seq, int seqlen, int startpos, int kmerle
 		powertable[i] = ipow( aminoacid_count , i);
 	}
 	
+	#ifdef DEBUG
+	if (strlen(seq) != (size_t)seqlen) {
+		cerr <<"error: strlen(seq) != seqlen" << endl;
+		cerr << strlen(seq) << endl;
+		cerr << seqlen << endl;
+		exit(1);
+	}
+	#endif
+	
 }
 
 void KmerIterator::reset(int startpos){
@@ -99,12 +108,12 @@ bool KmerIterator::nextKmer(){
 			//	cout << i << ": " << sequence->at(i) << " " << (int) (sequence->at(i)) << endl;
 			//}
 			if (sequence[new_character_position] != 'X') {
-				cerr << "warning A:  amino acid not accepted \"" << sequence[new_character_position] << "\" pos: " << new_character_position << endl;
+				cerr << "warning A:  amino acid not accepted \"" << sequence[new_character_position] << "\" code:" << (int) sequence[new_character_position] << " pos: " << new_character_position << endl;
 				cerr << "seq: " << sequence << endl;
 				
-				#ifdef DEBUG
+				//#ifdef DEBUG
 				exit(1);
-				#endif
+				//#endif
 			}
 			//std::exit(1);
 			// and set kmer_start_pos XXXXXXXXXXXXX

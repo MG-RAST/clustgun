@@ -225,7 +225,7 @@ void checkFile(string * file) {
 	}
 	
 	if (! FileExists((char *) file->c_str())) {
-		cerr << "error reading file: " << *file << endl;
+		cerr << "error: cannot read file: " << *file << endl;
 		exit(EXIT_FAILURE);
 	}
 	

@@ -19,7 +19,7 @@ override LDFLAGS += -Wl,-R ${PREFIX}/local/lib
 endif
 
 #-O3
-override CFLAGS += -m64 -fopenmp -Wall
+override CFLAGS += -O3 -m64 -fopenmp -Wall
 # override directive allows me to append values to variables from makefile arguments without overwriting
 override LDFLAGS += -fopenmp
 
