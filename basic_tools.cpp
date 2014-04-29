@@ -4,6 +4,61 @@
 
 
 
+vector<string> * parse_column_data_line(string& line, char seperator) {
+	
+	vector<string> * results = new vector<string>;
+	
+	size_t left = 0;
+	size_t right = 0;
+	
+	
+	right = line.find_first_of(seperator);
+	if (right == string::npos) {
+		results->push_back(line);
+		return results;
+		//cerr << "error: right == string::npos" << endl;
+		//cerr << "line:" << line << endl;
+		//exit(EXIT_FAILURE);
+	}
+	
+	string entry = line.substr(left, right-left);
+	results->push_back(entry);
+	
+	bool loop = true;
+	while ( loop ) {
+		
+		// next start
+		left = line.find_first_not_of(seperator, right);
+		if (left == string::npos) {
+			cerr << "error: left == string::npos" << endl;
+			exit(EXIT_FAILURE);
+		}
+		
+		// next end
+		right = line.find_first_of(seperator, left);
+		if (right == string::npos) {
+			right = line.length();
+			loop = false;
+		}
+		entry = line.substr(left, right-left);
+		//cout << "got:_" << entry << "_"<< endl;
+		results->push_back(entry);
+	}
+	
+	
+	//cout << "got:_" << results->at(0) << "_"<< endl;
+	
+	
+	//                      // end of tlen:
+	//                      left = line.find_first_of(' ', left);
+	//                      if (left == string::npos) {
+	//                                      cerr << "blubb" << endl;
+	//                                      exit(EXIT_FAILURE);
+	//                      }
+	
+	
+	return results;
+}
 
 
 timespec diff(timespec start, timespec end)

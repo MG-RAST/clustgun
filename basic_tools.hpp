@@ -9,10 +9,10 @@
 #include <algorithm>
 #include <map>
 #include <unistd.h>
-#include<fstream>
+#include <fstream>
 #include <cmath>
 #include <time.h>
-
+#include <vector>
 
 using namespace std;
 
@@ -25,6 +25,7 @@ std::string getFileNameWithoutExtension(const std::string& FileName);
 
 void process_mem_usage(double& vm_usage, double& resident_set);
 
+vector<string> * parse_column_data_line(string& line, char seperator);
 
 timespec diff(timespec start, timespec end);
 timespec add_time(timespec time1, timespec time2);

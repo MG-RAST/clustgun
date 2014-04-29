@@ -1752,7 +1752,7 @@ void Clustgun::cluster(string inputfile) {
 					if (sequence_count - 1 < last_read_id) {
 						last_read_id = sequence_count - 1;
 					}
-						
+//log_stream << "thread " << this_thread_id << " first_read_id: " << first_read_id << " last_read_id: " << last_read_id << endl;
 					chunk_start += chunk_size;
 				}
 			}
@@ -3081,7 +3081,8 @@ MACRO_THREAD_UPDATE(this_thread_id, __LINE__)
 		// this thread has finished his clustering task
 		
 		//################################################################################################################
-			
+
+//log_stream << "thread barrier " << this_thread_id << endl;
 		#pragma omp flush
 		// wait for all threads finishing clustering
 		#pragma omp barrier
@@ -3533,6 +3534,7 @@ int main(int argc, const char * argv[])	{
 	string input_file;
 	string listfile;
 	
+	
 	if (vm.count("input-file")) {
 	
 		
@@ -3556,7 +3558,9 @@ int main(int argc, const char * argv[])	{
 			//logfile = input_file;
 			logfile = getFileNameWithoutExtension(input_file);
 			listfile = string(logfile);
+			
 			logfile.append(".clustgun.log");
+			
 			listfile.append(".clustgun.list");
 		} else {
 			logfile = getFileNameWithoutExtension(logfile);
