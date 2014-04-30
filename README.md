@@ -1,4 +1,3 @@
-
 clustgun
 ========
 
@@ -10,7 +9,8 @@ installation
 If you have admin rights on your system, you won't need to use --prefix option.
 
 **1 Boost C++ libraries** (http://www.boost.org)
-ubuntu:
+
+in ubuntu:
 ```
 > sudo apt-get install libboost-system-dev libboost-iostreams-dev libboost-program-options-dev
 ```
@@ -67,7 +67,11 @@ only for developers:
 > git clone git://github.com/wltrimbl/FGS.git
 > cd FGS
 ```
-In case you need the exact version of FragGeneScan that was used in the evaluation of clustgun, use "git reset --hard e1aedead8512801f4324a049caa2f38eebbdfe8d"
+In case you need the exact version of FragGeneScan that was used in the evaluation of clustgun, use
+```
+> git reset --hard e1aedead8512801f4324a049caa2f38eebbdfe8d"
+```
+and then
 ```
 > make
 ```
@@ -80,13 +84,17 @@ Under ubuntu you might first need to remove an older version of GNU Parallel:
 > sudo apt-get remove moreutils
 ```
 To install GNU Parallel on a debian system (like ubuntu) use:
+
 ```
 > wget http://launchpadlibrarian.net/104233941/parallel_20120422-1_all.deb && sudo dpkg -i ./parallel_20120422-1_all.deb
 ```
+
 The version reported by   
+
 ```
 > parallel --minversion 1 
 ```
+
 should be "20120422".
 
 
@@ -95,12 +103,12 @@ run FragGeneScan
 ----------------
 Copy fgs.sh into the FGS directory.
 To run FGS with 4 CPUs call from within the FGS directory:
+
 ```
 > ./fgs.sh 4 input.fasta
 ```
-This should create a result.faa
 
-To change the parameters of FGS please modify the fgs.sh script with a text editor accordingly. Note that for IO-efficiency this way of running FGS will give you only the protein fragment files (.faa), not the other output files that FGS produces by default.  
+This should create a result.faa. To change the parameters of FGS please modify the fgs.sh script with a text editor accordingly. Note that for IO-efficiency this way of running FGS will give you only the protein fragment files (.faa), not the other output files that FGS produces by default.  
 
 
 run clustgun
