@@ -3,7 +3,7 @@ clustgun
 
 
 
-installation
+Installation
 ------------
 
 If you have admin rights on your system, you won't need to use --prefix option.
@@ -99,7 +99,7 @@ should be "20120422".
 
 
 
-run FragGeneScan
+Run FragGeneScan
 ----------------
 Copy fgs.sh into the FGS directory.
 To run FGS with 4 CPUs call from within the FGS directory:
@@ -111,7 +111,7 @@ To run FGS with 4 CPUs call from within the FGS directory:
 This should create a result.faa. To change the parameters of FGS please modify the fgs.sh script with a text editor accordingly. Note that for IO-efficiency this way of running FGS will give you only the protein fragment files (.faa), not the other output files that FGS produces by default.  
 
 
-run clustgun
+Run Clustgun
 ------------
 basic usage:
 ```bash
@@ -123,9 +123,19 @@ for help call clustgun without any parameters:
 > ./clustgun
 ```
 
+Test Dataset
+-------------
+Protein fragments predicted with FragGeneScan from a soil sample:
+* 10k fragments: [4477899.3.fgs.10k.faa.gz](http://shock.metagenomics.anl.gov:80/node/9f6ddf16-e297-42fc-b3a4-808c025c20bc?download&filename=4477899.3.fgs.10k.faa.gz)
+* 100k fragments:
+* 1m fragments:
 
+Example:
+```bash
+> ./clustgun --threads=2 4477899.3.fgs.10k.faa.gz
+```
 
-author
+Author
 ------
 Wolfgang Gerlach
 xwgerlach@mcs.anl.gov (remove x in front of my name)
