@@ -127,8 +127,8 @@ Test Dataset
 -------------
 Protein fragments predicted with FragGeneScan from a soil sample:
 * 10k fragments: [4477899.3.fgs.10k.faa.gz](http://shock.metagenomics.anl.gov:80/node/9f6ddf16-e297-42fc-b3a4-808c025c20bc?download&filename=4477899.3.fgs.10k.faa.gz)
-* 100k fragments:
-* 1m fragments:
+* 100k fragments: [4477899.3.fgs.100k.faa.gz](http://shock.metagenomics.anl.gov:80/node/1f17b284-f046-41c3-b558-2ad378714b52?download&filename=4477899.3.fgs.100k.faa.gz)
+* 1m fragments: [4477899.3.fgs.1m.faa.gz](http://shock.metagenomics.anl.gov:80/node/1c952b5e-b538-471e-b772-22c2ac87830?download&filename=4477899.3.fgs.1m.faa.gz)
 
 Example:
 ```bash
