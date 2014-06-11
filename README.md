@@ -6,7 +6,7 @@ clustgun
 Installation
 ------------
 
-If you have admin rights on your system, you won't need to use --prefix option.
+
 
 **1 Boost C++ libraries** (http://www.boost.org)
 
@@ -22,6 +22,8 @@ or from source:
 > ./bootstrap.sh --with-libraries=iostreams,program_options,system --prefix=$HOME
 > ./b2 --layout=system install
 ```
+If you have admin rights on your system, you do not need to use --prefix option.
+
 **2 clustgun** (https://github.com/MG-RAST/clustgun/)
 download:
 ```bash
